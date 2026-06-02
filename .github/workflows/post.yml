@@ -48,8 +48,12 @@ jobs:
       - name: Install Korean fonts
         run: |
           sudo apt-get update
-          sudo apt-get install -y fonts-noto-cjk fonts-noto-cjk-extra
+          sudo apt-get install -y fonts-nanum fonts-noto-cjk
           fc-cache -fv
+          echo "=== 설치된 한글 폰트 ==="
+          ls -la /usr/share/fonts/truetype/nanum/ 2>/dev/null || echo "nanum 폴더 없음"
+          ls -la /usr/share/fonts/opentype/noto/ 2>/dev/null | head -5
+          fc-list :lang=ko | head -10
 
       - name: Install deps
         run: |

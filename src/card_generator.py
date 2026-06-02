@@ -18,17 +18,18 @@ BG = (0, 0, 0)
 FG = (255, 255, 255)
 ACCENT = (200, 255, 60)  # 라임 그린
 
-# 한글 폰트 후보 — 환경에 따라 다름. 워크플로우가 fonts-noto-cjk 설치함
+# 한글 폰트 후보 — 단일 .ttf를 .ttc보다 우선 (Pillow 호환성)
 FONT_CANDIDATES: list[str] = [
-    # Ubuntu — fonts-noto-cjk 패키지 (apt-get install)
-    "/usr/share/fonts/opentype/noto/NotoSansCJK-Black.ttc",
+    # Ubuntu — fonts-nanum (단일 ttf, Pillow 호환성 최고)
+    "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
+    "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+    "/usr/share/fonts/truetype/nanum/NanumBarunGothicBold.ttf",
+    "/usr/share/fonts/truetype/nanum/NanumBarunGothic.ttf",
+    # Ubuntu — fonts-noto-cjk (.ttc, index 지정 필요)
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
     "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-    # Ubuntu — fonts-nanum 대안
-    "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
-    "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
     # Windows 로컬 테스트용
     "C:/Windows/Fonts/malgunbd.ttf",
     "C:/Windows/Fonts/malgun.ttf",
@@ -37,29 +38,29 @@ FONT_CANDIDATES: list[str] = [
 ]
 
 
-def _resolve_font_path(size: int) -> str | None:
-    """디버깅용 — 어떤 폰트 경로가 선택됐는지 알 수 있게."""
-    for path in FONT_CANDIDATES:
-        if os.path.exists(path):
-            return path
-    return None
-
-
-_FONT_WARNED = False
+_FONT_LOGGED: set[str] = set()
 
 
 def _load_font(size: int) -> ImageFont.FreeTypeFont:
-    global _FONT_WARNED
     for path in FONT_CANDIDATES:
-        if os.path.exists(path):
-            try:
-                return ImageFont.truetype(path, size=size)
-            except OSError:
-                continue
-    # 모두 실패 시 디폴트 (한글 깨짐) — 한 번만 경고
-    if not _FONT_WARNED:
-        print("[card_generator] ⚠️  한글 폰트를 못 찾음. 모두 깨질 수 있음. apt-get install fonts-noto-cjk 필요.")
-        _FONT_WARNED = True
+        if not os.path.exists(path):
+            continue
+        try:
+            # .ttc는 index=0 명시 (한국어 글리프 포함된 0번 사용)
+            if path.endswith(".ttc"):
+                font = ImageFont.truetype(path, size=size, index=0)
+            else:
+                font = ImageFont.truetype(path, size=size)
+            if path not in _FONT_LOGGED:
+                print(f"[card_generator] ✅ 사용 폰트: {path}")
+                _FONT_LOGGED.add(path)
+            return font
+        except OSError as e:
+            print(f"[card_generator] ⚠️  {path} 로드 실패: {e}")
+            continue
+    print("[card_generator] ❌ 한글 폰트 찾기 실패. 모든 후보:")
+    for p in FONT_CANDIDATES:
+        print(f"  - {p}: {'있음' if os.path.exists(p) else '없음'}")
     return ImageFont.load_default()
 
 
