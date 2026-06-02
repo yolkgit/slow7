@@ -1,0 +1,96 @@
+name: Slow7 Auto Post
+
+on:
+  schedule:
+    # KST = UTC+9
+    - cron: "0 22 * * *"   # 07:00 KST → 아침
+    - cron: "0 3 * * *"    # 12:00 KST → 점심
+    - cron: "0 10 * * *"   # 19:00 KST → 저녁
+  workflow_dispatch:
+    inputs:
+      slot:
+        description: "수동 실행할 슬롯"
+        required: true
+        default: "morning"
+        type: choice
+        options: [morning, noon, evening]
+
+permissions:
+  contents: write  # posted_media / DB git push 위해
+
+concurrency:
+  group: slow7-post
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001' }}
+      THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+      THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
+      GITHUB_REPO: ${{ github.repository }}
+      GITHUB_BRANCH: ${{ github.ref_name }}
+      ATTACH_CARD_IMAGE: "true"
+      AUTO_REPLY_ENABLED: "true"
+      DRY_RUN: ${{ vars.DRY_RUN || 'false' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Resolve slot
+        id: slot
+        run: |
+          if [ -n "${{ inputs.slot }}" ]; then
+            echo "slot=${{ inputs.slot }}" >> $GITHUB_OUTPUT
+          else
+            # cron 시간(UTC)으로 분기
+            HOUR=$(date -u +%H)
+            case $HOUR in
+              22) echo "slot=morning" >> $GITHUB_OUTPUT ;;
+              03) echo "slot=noon" >> $GITHUB_OUTPUT ;;
+              10) echo "slot=evening" >> $GITHUB_OUTPUT ;;
+              *)  echo "slot=morning" >> $GITHUB_OUTPUT ;;
+            esac
+          fi
+
+      - name: Prepare (글/카드 생성)
+        run: python -m scripts.post prepare ${{ steps.slot.outputs.slot }}
+
+      - name: Commit media so raw URL is live
+        run: |
+          git config user.name "slow7-bot"
+          git config user.email "slow7-bot@users.noreply.github.com"
+          git add posted_media/ .pending.json
+          if ! git diff --staged --quiet; then
+            git commit -m "chore(media): ${{ steps.slot.outputs.slot }} card"
+            git push
+          fi
+
+      - name: Wait for raw CDN
+        run: sleep 25
+
+      - name: Publish to Threads
+        run: python -m scripts.post publish
+
+      - name: Commit DB & cleanup
+        if: always()
+        run: |
+          git add slow7.db || true
+          rm -f .pending.json
+          git add .pending.json || true
+          if ! git diff --staged --quiet; then
+            git commit -m "chore(db): record ${{ steps.slot.outputs.slot }} post"
+            git push
+          fi

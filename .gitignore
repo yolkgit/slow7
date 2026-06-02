@@ -1,0 +1,15 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.vscode/
+.idea/
+*.db
+*.sqlite
+*.sqlite3
+.DS_Store
+Thumbs.db
+# 생성된 카드뉴스는 posted_media 브랜치/디렉토리에 별도 관리
+local_media/

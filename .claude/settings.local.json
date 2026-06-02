@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir \"C:\\\\Users\\\\DH201-pc\\\\Desktop\\\\slow7\")",
+      "WebFetch(domain:developers.facebook.com)",
+      "Bash(py --version)",
+      "Bash(python -c \"import PIL\")",
+      "Bash(python -m pip install --quiet Pillow python-dotenv)",
+      "Bash(python -m scripts.preview_card)"
+    ]
+  }
+}

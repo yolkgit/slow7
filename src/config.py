@@ -1,0 +1,49 @@
+"""환경 변수 로딩 + 공통 상수."""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(ROOT / ".env")
+
+
+def _bool(name: str, default: bool = False) -> bool:
+    v = os.getenv(name, "").strip().lower()
+    if not v:
+        return default
+    return v in ("1", "true", "yes", "y", "on")
+
+
+THREADS_ACCESS_TOKEN = os.getenv("THREADS_ACCESS_TOKEN", "")
+THREADS_USER_ID = os.getenv("THREADS_USER_ID", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
+
+GITHUB_REPO = os.getenv("GITHUB_REPO", "")
+GITHUB_BRANCH = os.getenv("GITHUB_BRANCH", "main")
+
+ATTACH_CARD_IMAGE = _bool("ATTACH_CARD_IMAGE", True)
+AUTO_REPLY_ENABLED = _bool("AUTO_REPLY_ENABLED", True)
+DRY_RUN = _bool("DRY_RUN", False)
+
+BRAND_NAME = "슬로우7"
+BRAND_SLOGAN = "7분 페이스로 극강의 효율"
+LOGO_PATH = ROOT / "assets" / "logo.png"
+DB_PATH = ROOT / "slow7.db"
+MEDIA_DIR = ROOT / "posted_media"
+
+
+def validate(require_threads: bool = True, require_claude: bool = True) -> list[str]:
+    """누락된 환경 변수를 리스트로 반환. 빈 리스트면 OK."""
+    missing: list[str] = []
+    if require_claude and not ANTHROPIC_API_KEY:
+        missing.append("ANTHROPIC_API_KEY")
+    if require_threads:
+        if not THREADS_ACCESS_TOKEN:
+            missing.append("THREADS_ACCESS_TOKEN")
+        if not THREADS_USER_ID:
+            missing.append("THREADS_USER_ID")
+    return missing
