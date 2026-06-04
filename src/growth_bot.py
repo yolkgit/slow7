@@ -123,21 +123,37 @@ def _gather_candidates(keywords: list[str]) -> list[tuple[dict, str]]:
     """각 키워드로 검색해서 (post, keyword) 튜플 리스트로 모음."""
     results: list[tuple[dict, str]] = []
     seen_ids: set[str] = set()
+    seen_usernames: set[str] = set()
     # 키워드 순서 섞어서 매번 다른 키워드부터
     shuffled = list(keywords)
     random.shuffle(shuffled)
+    first_dump = True
     for kw in shuffled:
-        try:
-            posts = threads_client.search_topic(kw, search_type="RECENT", limit=10)
-        except Exception as e:
-            print(f"[growth] search 실패 [{kw}]: {e}")
-            continue
-        for p in posts:
-            pid = p.get("id")
-            if not pid or pid in seen_ids:
+        for search_type in ("RECENT", "TOP"):  # RECENT가 막히면 TOP 시도
+            try:
+                posts = threads_client.search_topic(kw, search_type=search_type, limit=10)
+            except Exception as e:
+                print(f"[growth] search 실패 [{kw}/{search_type}]: {e}")
                 continue
-            seen_ids.add(pid)
-            results.append((p, kw))
+            if not posts:
+                continue
+            # 첫 결과 한 번만 raw 덤프해서 응답 구조 확인
+            if first_dump and posts:
+                import json as _json
+                print(f"[growth][debug] 첫 결과 raw 응답 구조: {_json.dumps(posts[0], ensure_ascii=False)[:500]}")
+                first_dump = False
+            for p in posts:
+                pid = p.get("id")
+                if not pid or pid in seen_ids:
+                    continue
+                seen_ids.add(pid)
+                uname = (p.get("username") or "(no username)").lower()
+                seen_usernames.add(uname)
+                snippet = (p.get("text") or "").strip()[:50].replace("\n", " ")
+                print(f"[growth][debug] [{kw}/{search_type}] @{uname}: {snippet}")
+                results.append((p, kw))
+    # 발견된 username 분포 요약
+    print(f"[growth][debug] 발견된 unique username: {sorted(seen_usernames)}")
     return results
 
 
