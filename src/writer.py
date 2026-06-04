@@ -107,10 +107,15 @@ USER_TEMPLATE = """[오늘의 글 작성 지시]
 [최근 게시 주제 — 표현/문장 재활용 금지]
 {recent_keys}
 
-위 가이드에 따라 마모루 말투의 슬로우조깅 정보성 게시물을 작성해줘. JSON으로만 답변.
+위 가이드에 따라 마모루 말투의 슬로우조깅 정보성 게시물을 작성해줘.
+게시물 본문만 그대로 출력해. JSON·따옴표·코드펜스·설명 없이 첫 줄부터 바로 본문, 마지막 줄은 해시태그.
 """
 
 SLOT_KOR = {"morning": "아침", "noon": "점심", "evening": "저녁"}
+
+
+# 모델이 본문을 담을 때 쓸 수 있는 키 후보
+_TEXT_KEYS = ("text", "post", "content", "본문", "게시물", "body", "message")
 
 
 def _strip_wrappers(s: str) -> str:
@@ -118,14 +123,25 @@ def _strip_wrappers(s: str) -> str:
     s = s.strip()
     s = re.sub(r"^```(?:json|text)?\s*", "", s)
     s = re.sub(r"\s*```$", "", s)
-    # 혹시 JSON으로 반환하면 text 필드만 뽑기
+    s = s.strip()
+
+    # JSON으로 반환한 경우 — 어떤 키든 본문 문자열을 찾아 추출
     if s.startswith("{") and s.endswith("}"):
         try:
             obj = json.loads(s)
-            if isinstance(obj, dict) and "text" in obj:
-                return str(obj["text"]).strip()
+            if isinstance(obj, dict):
+                # 알려진 키 우선
+                for k in _TEXT_KEYS:
+                    if k in obj and isinstance(obj[k], str) and obj[k].strip():
+                        return obj[k].strip()
+                # 폴백: 가장 긴 문자열 값 (본문일 가능성 높음)
+                str_vals = [v for v in obj.values() if isinstance(v, str)]
+                if str_vals:
+                    return max(str_vals, key=len).strip()
         except json.JSONDecodeError:
             pass
+
+    # 따옴표 래핑 제거
     if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
         s = s[1:-1]
     return s.strip()
