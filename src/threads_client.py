@@ -118,3 +118,44 @@ def search_topic(query: str, search_type: str = "TOP", limit: int = 20) -> list[
 
 def me() -> dict:
     return _req("GET", "/me", params={"fields": "id,username,threads_profile_picture_url"})
+
+
+# --------------------- 인사이트(성과) ---------------------
+
+# 게시물 단위로 의미있는 지표들
+MEDIA_METRICS = ["views", "likes", "replies", "reposts", "quotes", "shares"]
+
+
+def fetch_media_insights(media_id: str) -> dict:
+    """게시물 1개의 성과 지표를 {metric: value} dict로 반환.
+
+    권한 없거나 지표 미지원 시 해당 키는 0.
+    """
+    result = {m: 0 for m in MEDIA_METRICS}
+    try:
+        r = _req(
+            "GET",
+            f"/{media_id}/insights",
+            params={"metric": ",".join(MEDIA_METRICS)},
+        )
+    except ThreadsError as e:
+        print(f"[insights] {media_id} 실패: {e}")
+        return result
+
+    for item in r.get("data", []):
+        name = item.get("name")
+        if name not in result:
+            continue
+        # media insights는 total_value.value 형태
+        val = None
+        if "total_value" in item and isinstance(item["total_value"], dict):
+            val = item["total_value"].get("value")
+        elif item.get("values"):
+            # time_series 형태 폴백 — 마지막 값
+            try:
+                val = item["values"][-1].get("value")
+            except (IndexError, AttributeError):
+                val = None
+        if val is not None:
+            result[name] = int(val)
+    return result

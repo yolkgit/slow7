@@ -2,10 +2,11 @@ name: Slow7 Auto Post
 
 on:
   schedule:
-    # KST = UTC+9
-    - cron: "0 22 * * *"   # 07:00 KST → 아침
-    - cron: "0 3 * * *"    # 12:00 KST → 점심
-    - cron: "0 10 * * *"   # 19:00 KST → 저녁
+    # KST = UTC+9. 정각을 피해 골든타임 + 약간 비정시로 (봇 티 줄이기)
+    # 실제 게시는 아래 "사람처럼 랜덤 지연" 단계에서 0~15분 더 늦춰짐
+    - cron: "52 21 * * *"   # 06:52 KST → 아침 (출근길)
+    - cron: "48 2 * * *"    # 11:48 KST → 점심
+    - cron: "27 11 * * *"   # 20:27 KST → 저녁 (퇴근 후 골든타임)
   workflow_dispatch:
     inputs:
       slot:
@@ -56,15 +57,24 @@ jobs:
           if [ -n "${{ inputs.slot }}" ]; then
             echo "slot=${{ inputs.slot }}" >> $GITHUB_OUTPUT
           else
-            # cron 시간(UTC)으로 분기
-            HOUR=$(date -u +%H)
-            case $HOUR in
-              22) echo "slot=morning" >> $GITHUB_OUTPUT ;;
-              03) echo "slot=noon" >> $GITHUB_OUTPUT ;;
-              10) echo "slot=evening" >> $GITHUB_OUTPUT ;;
-              *)  echo "slot=morning" >> $GITHUB_OUTPUT ;;
-            esac
+            # KST hour 기준으로 분기 (cron 지연에 강건)
+            HOUR_KST=$(TZ="Asia/Seoul" date +%H)
+            HOUR_KST=$((10#$HOUR_KST))
+            if [ "$HOUR_KST" -ge 5 ] && [ "$HOUR_KST" -lt 11 ]; then
+              echo "slot=morning" >> $GITHUB_OUTPUT
+            elif [ "$HOUR_KST" -ge 11 ] && [ "$HOUR_KST" -lt 16 ]; then
+              echo "slot=noon" >> $GITHUB_OUTPUT
+            else
+              echo "slot=evening" >> $GITHUB_OUTPUT
+            fi
           fi
+
+      - name: 사람처럼 랜덤 지연 (수동 실행 시 생략)
+        if: ${{ github.event_name == 'schedule' }}
+        run: |
+          DELAY=$((RANDOM % 900))   # 0~15분(900초) 랜덤
+          echo "게시 전 ${DELAY}초 대기 (자연스러운 게시 시각 분산)"
+          sleep $DELAY
 
       - name: Prepare (글 생성)
         run: python -m scripts.post prepare ${{ steps.slot.outputs.slot }}

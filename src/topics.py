@@ -74,14 +74,38 @@ EVENING: list[Topic] = [
 _ALL = {"morning": MORNING, "noon": NOON, "evening": EVENING}
 
 
-def pick(slot: str, exclude_keys: set[str] | None = None) -> Topic:
-    """슬롯에 맞는 토픽 중 최근에 안 쓴 것 하나를 뽑는다."""
+def pick(
+    slot: str,
+    exclude_keys: set[str] | None = None,
+    scores: dict[str, float] | None = None,
+) -> Topic:
+    """슬롯에 맞는 토픽 중 최근에 안 쓴 것 하나를 뽑는다.
+
+    scores가 주어지면 (토픽키 → 평균 성과점수) 성과 좋은 토픽을
+    더 자주 뽑도록 가중 랜덤. 성과 데이터 없는 토픽도 기본 가중치로 탐색 유지.
+    """
     exclude_keys = exclude_keys or set()
     pool = _ALL[slot]
     candidates = [t for t in pool if t.key not in exclude_keys]
     if not candidates:
         candidates = pool
-    return random.choice(candidates)
+
+    if not scores:
+        return random.choice(candidates)
+
+    # 가중 랜덤: 성과점수 기반 + 미검증 토픽 탐색 보너스
+    avg = (sum(scores.values()) / len(scores)) if scores else 1.0
+    base = max(avg, 1.0)
+    weights = []
+    for t in candidates:
+        if t.key in scores:
+            # 성과 점수 + 1 (0점 방지). 잘된 토픽일수록 큼
+            w = scores[t.key] + 1.0
+        else:
+            # 아직 성과 데이터 없는 토픽 → 평균 수준으로 탐색 기회 부여
+            w = base
+        weights.append(w)
+    return random.choices(candidates, weights=weights, k=1)[0]
 
 
 def all_topics() -> list[Topic]:

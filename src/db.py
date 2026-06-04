@@ -17,7 +17,15 @@ CREATE TABLE IF NOT EXISTS posts (
     topic_key TEXT NOT NULL,       -- 어떤 토픽으로 썼는지 (중복 방지)
     text TEXT NOT NULL,
     image_url TEXT,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    -- 성과 지표 (track 스크립트가 주기적으로 갱신)
+    views INTEGER DEFAULT 0,
+    likes INTEGER DEFAULT 0,
+    replies INTEGER DEFAULT 0,
+    reposts INTEGER DEFAULT 0,
+    quotes INTEGER DEFAULT 0,
+    shares INTEGER DEFAULT 0,
+    metrics_updated_at INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS replied (
@@ -55,9 +63,25 @@ def conn() -> Iterator[sqlite3.Connection]:
         c.close()
 
 
+_MIGRATION_COLUMNS = {
+    "views": "INTEGER DEFAULT 0",
+    "likes": "INTEGER DEFAULT 0",
+    "replies": "INTEGER DEFAULT 0",
+    "reposts": "INTEGER DEFAULT 0",
+    "quotes": "INTEGER DEFAULT 0",
+    "shares": "INTEGER DEFAULT 0",
+    "metrics_updated_at": "INTEGER DEFAULT 0",
+}
+
+
 def init() -> None:
     with conn() as c:
         c.executescript(SCHEMA)
+        # 기존 DB에 metrics 컬럼이 없으면 추가 (마이그레이션)
+        existing = {row["name"] for row in c.execute("PRAGMA table_info(posts)").fetchall()}
+        for col, decl in _MIGRATION_COLUMNS.items():
+            if col not in existing:
+                c.execute(f"ALTER TABLE posts ADD COLUMN {col} {decl}")
 
 
 def record_post(threads_id: str | None, slot: str, topic_key: str, text: str, image_url: str | None) -> None:
@@ -133,6 +157,54 @@ def count_external_comments_to_user(username: str, within_seconds: int) -> int:
             (username, cutoff),
         ).fetchone()
     return int(row["n"]) if row else 0
+
+
+def posts_for_metrics(limit: int = 50) -> list[dict]:
+    """metrics 갱신 대상 게시물 (threads_id 있는 것)."""
+    with conn() as c:
+        rows = c.execute(
+            "SELECT threads_id, topic_key, slot, created_at FROM posts "
+            "WHERE threads_id IS NOT NULL ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_metrics(threads_id: str, m: dict) -> None:
+    with conn() as c:
+        c.execute(
+            "UPDATE posts SET views=?, likes=?, replies=?, reposts=?, quotes=?, shares=?, "
+            "metrics_updated_at=? WHERE threads_id=?",
+            (
+                m.get("views", 0), m.get("likes", 0), m.get("replies", 0),
+                m.get("reposts", 0), m.get("quotes", 0), m.get("shares", 0),
+                int(time.time()), threads_id,
+            ),
+        )
+
+
+def _engagement_expr() -> str:
+    # 가중 인게이지먼트 점수: 좋아요1 + 답글3 + 리포스트4 + 인용4 + 공유5 (+ 조회수 보정)
+    return "(likes + replies*3 + reposts*4 + quotes*4 + shares*5)"
+
+
+def topic_performance() -> list[dict]:
+    """토픽별 평균 인게이지먼트 점수 (성과 기록 있는 것만)."""
+    expr = _engagement_expr()
+    with conn() as c:
+        rows = c.execute(
+            f"SELECT topic_key, COUNT(*) AS n, "
+            f"AVG({expr}) AS avg_score, AVG(views) AS avg_views, "
+            f"SUM(likes) AS likes, SUM(replies) AS replies "
+            f"FROM posts WHERE metrics_updated_at > 0 "
+            f"GROUP BY topic_key ORDER BY avg_score DESC",
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def topic_scores() -> dict[str, float]:
+    """토픽별 평균 점수 dict. 가중 선택에 사용."""
+    return {r["topic_key"]: float(r["avg_score"] or 0) for r in topic_performance()}
 
 
 def record_external_comment(

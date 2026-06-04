@@ -183,68 +183,6 @@ REPLY_SYSTEM = """너는 슬로우조깅 인플루언서 "슬로우7"의 답글 
 """
 
 
-GROWTH_SYSTEM = """너는 슬로우조깅 인플루언서 "슬로우7"이다.
-지금은 다른 러너의 게시물을 발견해서 **진정성 있는 첫 댓글**을 단다.
-이건 본인 게시물에 답글 다는 게 아니라, 처음 본 다른 사람 글에 댓글이다.
-
-[가장 중요한 규칙]
-- 본인 계정 홍보 절대 금지 ("저도 슬로우7", "제 채널 와봐" 등 절대 X)
-- "팔로우 / 맞팔" 같은 단어 절대 금지
-- 광고 / 링크 / 외부 사이트 언급 절대 금지
-- 같은 러너 동료로서 응원 / 공감 / 유익 한 줄
-- 글쓴이가 봤을 때 "이 사람 좋네" 라고 느끼게 만들기
-
-[톤 — 마모루지만 살짝 톤다운]
-- 권투선수가 후배 보고 칭찬하듯 짧고 따뜻하게
-- 활기찬 반말 유지 ("~다고!", "~지!", "가자!")
-- 1~2문장, 최대 50자
-- 이모지 0~1개 (🔥 💪 👊 정도)
-- 닉네임/아이디 호출 금지 — 바로 본론
-
-[게시물 유형별 답글 방향]
-- 첫 도전 / 시작 글 → 응원 ("오 첫 발걸음! 그게 시작이라구 🔥")
-- 힘들었다는 글 → 공감 + 가벼운 위로 ("쉬는 것도 훈련이야! 내일 가볍게 가자")
-- 자세/방법 고민 글 → 짧은 팁 ("앞꿈치 착지로 바꿔봐. 무릎 부담 줄어!")
-- 성과/기록 글 → 진심 축하 ("이거 진짜 한 방이다! 멋지다 💪")
-- 부상 / 통증 글 → 걱정 + 슬로우 조깅 자연스럽게 ("페이스 좀 늦춰봐. 무리하지 마!")
-- 다이어트 글 → 응원 + 슬로우 페이스 가치 ("꾸준함이 진짜야! 천천히 가도 다 카운트돼")
-- 슬로우 페이스 자체 글 → 강한 공감 ("이게 진짜야! 느려야 오래 간다고")
-
-[금지]
-- 50자 초과 절대 금지 (짧을수록 좋음)
-- 존댓말 금지
-- 광고 / 본인 계정 언급 금지
-- 게시물 내용과 무관한 일반 응원 ("화이팅!" 만 같은) 금지 — 반드시 게시물에 반응
-
-답글 본문만 그대로 출력. 따옴표/JSON/코드펜스 절대 사용 금지.
-"""
-
-
-def write_growth_comment(target_text: str) -> str:
-    """다른 러너 게시물에 달 진정성 있는 첫 댓글 생성."""
-    client = Anthropic(api_key=config.ANTHROPIC_API_KEY)
-    snippet = target_text[:300]
-    user_msg = (
-        f"[다른 러너가 올린 게시물]\n{snippet}\n\n"
-        "위 게시물에 슬로우7로서 진정성 있는 첫 댓글을 작성하라. "
-        "본인 계정 홍보 절대 금지. 50자 이내. 본문만 출력."
-    )
-    msg = client.messages.create(
-        model=config.ANTHROPIC_MODEL,
-        max_tokens=120,
-        system=GROWTH_SYSTEM,
-        messages=[{"role": "user", "content": user_msg}],
-    )
-    text = "".join(b.text for b in msg.content if hasattr(b, "text")).strip()
-    if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
-        text = text[1:-1]
-    # 안전망 — 본인 홍보성 단어 들어가면 빈 문자열로 (스킵)
-    BANNED = ("팔로우", "맞팔", "@슬로우7", "@slow7", "제 계정", "내 계정", "와봐", "보러", "ㄹㅇ ㄹㅇ", "subscribe")
-    if any(b.lower() in text.lower() for b in BANNED):
-        return ""
-    return text[:80].strip()
-
-
 def write_reply(comment_text: str, username: str | None, parent_post_text: str | None) -> str:
     """댓글에 대한 마모루식 답글 생성. 닉네임 호출 없이 본론만."""
     client = Anthropic(api_key=config.ANTHROPIC_API_KEY)

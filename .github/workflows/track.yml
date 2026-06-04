@@ -1,31 +1,27 @@
-name: Slow7 Growth Bot
+name: Slow7 Track Performance
 
-# 슬로우조깅/러닝 관련 신규 게시물에 마모루 톤으로 첫 댓글 달기.
-# 첫 댓글이 노출의 70%를 결정하는 그로스 엔진.
+# 본인 게시물 성과(조회/좋아요/답글) 수집 → 토픽별 분석.
+# 이 점수가 다음 게시 때 잘되는 토픽을 더 자주 뽑도록 자동 반영됨.
 
 on:
   schedule:
-    # 1시간마다 (다만 매시간 정각은 봇 티나니까 17분에 실행)
-    - cron: "17 * * * *"
+    - cron: "0 15 * * *"   # 매일 00:00 KST (하루치 성과 마감 집계)
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: slow7-growth
+  group: slow7-track
   cancel-in-progress: true
 
 jobs:
-  grow:
+  track:
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001' }}
       THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
       THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
-      DRY_RUN: ${{ vars.DRY_RUN || 'false' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -40,8 +36,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Growth pass
-        run: python -m scripts.grow
+      - name: Collect insights & report
+        run: python -m scripts.track
 
       - name: Commit DB
         if: always()
@@ -50,7 +46,7 @@ jobs:
           git config user.email "slow7-bot@users.noreply.github.com"
           git add slow7.db || true
           if ! git diff --staged --quiet; then
-            git commit -m "chore(db): growth bot record"
+            git commit -m "chore(db): performance metrics"
             git pull --rebase || true
             git push
           fi

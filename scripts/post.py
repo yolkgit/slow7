@@ -35,8 +35,10 @@ def prepare(slot: str) -> int:
 
     db.init()
     exclude = set(db.recent_topic_keys(limit=30))
-    topic = topics.pick(slot, exclude_keys=exclude)
-    print(f"[prepare] slot={slot} topic={topic.key} ({topic.title})")
+    scores = db.topic_scores()  # 성과 데이터 있으면 잘된 토픽 가중
+    topic = topics.pick(slot, exclude_keys=exclude, scores=scores)
+    score_note = f" (성과가중 {len(scores)}개 토픽 반영)" if scores else ""
+    print(f"[prepare] slot={slot} topic={topic.key} ({topic.title}){score_note}")
 
     content = writer.write_post(topic, list(exclude)[:10])
     text = content["text"]
