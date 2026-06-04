@@ -19,6 +19,24 @@ from typing import Iterable
 from . import config, db, threads_client, writer
 
 
+# 본인 username 캐시 (self-check용)
+_MY_USERNAME: str | None = None
+
+
+def _my_username() -> str:
+    """본인 Threads username을 한 번만 가져와서 캐싱."""
+    global _MY_USERNAME
+    if _MY_USERNAME is None:
+        try:
+            me = threads_client.me()
+            _MY_USERNAME = (me.get("username") or "").lower()
+            print(f"[growth] 본인 username: @{_MY_USERNAME}")
+        except Exception as e:
+            print(f"[growth] me() 실패 — username 캐시 못함: {e}")
+            _MY_USERNAME = ""
+    return _MY_USERNAME
+
+
 # 슬로우조깅 / 러닝 / 다이어트 / 건강 도메인 키워드
 GROWTH_KEYWORDS = [
     "슬로우조깅",
@@ -51,14 +69,26 @@ def _is_post_eligible(post: dict) -> tuple[bool, str]:
     if not post_id:
         return False, "no id"
 
-    # 본인 게시물 제외
+    # 본인 게시물 제외 — username 우선, ID는 폴백
+    post_username = (post.get("username") or (post.get("from") or {}).get("username") or "").lower()
+    my_username = _my_username()
+    if post_username and my_username and post_username == my_username:
+        return False, "self (by username)"
+
     from_id = (post.get("from") or {}).get("id") or post.get("user_id")
-    if str(from_id) == str(config.THREADS_USER_ID):
-        return False, "self"
+    if from_id and str(from_id) == str(config.THREADS_USER_ID):
+        return False, "self (by id)"
 
     text = (post.get("text") or "").strip()
     if len(text) < MIN_TEXT_LEN:
         return False, "too short"
+
+    # 본인 멘션이 포함된 글은 본인을 부르는 답글일 가능성 — 스킵
+    # (예: "야 slow7_crew! ..." 같은 텍스트)
+    if my_username and (
+        f"@{my_username}" in text.lower() or my_username in text.lower().split()
+    ):
+        return False, "mentions self"
 
     # 광고/홍보성 게시물 회피
     spam_markers = ("DM", "맞팔", "선팔", "유료광고", "공구", "공동구매", "쿠팡", "도매", "할인코드")
@@ -138,12 +168,14 @@ def run(dry_run: bool | None = None) -> int:
     random.shuffle(candidates)
 
     commented = 0
+    skip_counts: dict[str, int] = {}
     for post, kw in candidates:
         if commented >= budget:
             break
 
         ok, reason = _is_post_eligible(post)
         if not ok:
+            skip_counts[reason] = skip_counts.get(reason, 0) + 1
             continue
 
         text = post.get("text", "")
@@ -176,5 +208,7 @@ def run(dry_run: bool | None = None) -> int:
         # 사람처럼 보이게 사이에 랜덤 딜레이
         time.sleep(random.uniform(8, 25))
 
+    if skip_counts:
+        print(f"[growth] 스킵 요약: {skip_counts}")
     print(f"[growth] 총 {commented}개 댓글 게시")
     return commented
