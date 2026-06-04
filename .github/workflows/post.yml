@@ -75,10 +75,13 @@ jobs:
       - name: Commit DB & cleanup
         if: always()
         run: |
+          git config user.name "slow7-bot"
+          git config user.email "slow7-bot@users.noreply.github.com"
           git add slow7.db || true
           rm -f .pending.json
           git add .pending.json || true
           if ! git diff --staged --quiet; then
             git commit -m "chore(db): record ${{ steps.slot.outputs.slot }} post"
+            git pull --rebase || true
             git push
           fi

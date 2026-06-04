@@ -27,8 +27,20 @@ CREATE TABLE IF NOT EXISTS replied (
     replied_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS commented_external (
+    -- 그로스 봇이 다른 사람 게시물에 단 댓글 기록 (중복/스팸 방지)
+    target_post_id TEXT PRIMARY KEY,
+    target_username TEXT,
+    target_text_snippet TEXT,
+    comment_id TEXT,
+    keyword TEXT,
+    commented_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_posts_topic ON posts(topic_key);
 CREATE INDEX IF NOT EXISTS idx_posts_slot ON posts(slot);
+CREATE INDEX IF NOT EXISTS idx_ext_user ON commented_external(target_username);
+CREATE INDEX IF NOT EXISTS idx_ext_time ON commented_external(commented_at);
 """
 
 
@@ -90,3 +102,50 @@ def recent_post_ids(limit: int = 20) -> list[str]:
             (limit,),
         ).fetchall()
     return [r["threads_id"] for r in rows]
+
+
+# ---------- 그로스 봇 ----------
+
+def has_commented_external(target_post_id: str) -> bool:
+    with conn() as c:
+        row = c.execute(
+            "SELECT 1 FROM commented_external WHERE target_post_id = ?", (target_post_id,)
+        ).fetchone()
+    return row is not None
+
+
+def count_recent_external_comments(within_seconds: int) -> int:
+    cutoff = int(time.time()) - within_seconds
+    with conn() as c:
+        row = c.execute(
+            "SELECT COUNT(*) AS n FROM commented_external WHERE commented_at >= ?",
+            (cutoff,),
+        ).fetchone()
+    return int(row["n"]) if row else 0
+
+
+def count_external_comments_to_user(username: str, within_seconds: int) -> int:
+    cutoff = int(time.time()) - within_seconds
+    with conn() as c:
+        row = c.execute(
+            "SELECT COUNT(*) AS n FROM commented_external "
+            "WHERE target_username = ? AND commented_at >= ?",
+            (username, cutoff),
+        ).fetchone()
+    return int(row["n"]) if row else 0
+
+
+def record_external_comment(
+    target_post_id: str,
+    target_username: str | None,
+    target_text_snippet: str,
+    comment_id: str | None,
+    keyword: str,
+) -> None:
+    with conn() as c:
+        c.execute(
+            "INSERT OR REPLACE INTO commented_external "
+            "(target_post_id, target_username, target_text_snippet, comment_id, keyword, commented_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (target_post_id, target_username, target_text_snippet[:200], comment_id, keyword, int(time.time())),
+        )

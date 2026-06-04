@@ -1,19 +1,23 @@
-name: Slow7 Auto Reply
+name: Slow7 Growth Bot
+
+# 슬로우조깅/러닝 관련 신규 게시물에 마모루 톤으로 첫 댓글 달기.
+# 첫 댓글이 노출의 70%를 결정하는 그로스 엔진.
 
 on:
   schedule:
-    - cron: "*/30 * * * *"   # 30분마다
+    # 1시간마다 (다만 매시간 정각은 봇 티나니까 17분에 실행)
+    - cron: "17 * * * *"
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: slow7-reply
+  group: slow7-growth
   cancel-in-progress: true
 
 jobs:
-  reply:
+  grow:
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -21,7 +25,6 @@ jobs:
       ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001' }}
       THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
       THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
-      AUTO_REPLY_ENABLED: "true"
       DRY_RUN: ${{ vars.DRY_RUN || 'false' }}
 
     steps:
@@ -37,8 +40,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Reply pass
-        run: python -m scripts.reply
+      - name: Growth pass
+        run: python -m scripts.grow
 
       - name: Commit DB
         if: always()
@@ -47,7 +50,7 @@ jobs:
           git config user.email "slow7-bot@users.noreply.github.com"
           git add slow7.db || true
           if ! git diff --staged --quiet; then
-            git commit -m "chore(db): replies"
+            git commit -m "chore(db): growth bot record"
             git pull --rebase || true
             git push
           fi
