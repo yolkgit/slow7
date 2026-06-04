@@ -92,12 +92,8 @@ SYSTEM_PROMPT = """너는 한국어로 글을 쓰는 슬로우조깅 인플루�
 - 위 예시들의 문장을 그대로 베끼지 말고, 톤만 따라가라
 
 [출력 형식]
-반드시 JSON으로만 응답한다. 다른 텍스트는 일체 출력하지 마라.
-{
-  "text": "<스레드에 그대로 올라갈 본문. 해시태그 포함.>",
-  "card_title": "<카드뉴스 이미지에 들어갈 큰 제목 — 12자 이내. 임팩트 있게.>",
-  "card_subtitle": "<카드뉴스 이미지 부제목 — 22자 이내. 한 방 있게.>"
-}
+스레드 게시물 본문만 그대로 출력해라. 따옴표, 코드펜스, JSON, 설명 모두 사용 금지.
+첫 줄부터 바로 본문이 시작되고, 마지막 줄은 해시태그.
 """
 
 
@@ -117,21 +113,26 @@ USER_TEMPLATE = """[오늘의 글 작성 지시]
 SLOT_KOR = {"morning": "아침", "noon": "점심", "evening": "저녁"}
 
 
-def _extract_json(s: str) -> dict:
+def _strip_wrappers(s: str) -> str:
+    """모델이 가끔 붙이는 코드펜스/따옴표/JSON 래퍼를 벗긴다."""
     s = s.strip()
-    # 코드펜스 제거
-    s = re.sub(r"^```(?:json)?\s*", "", s)
+    s = re.sub(r"^```(?:json|text)?\s*", "", s)
     s = re.sub(r"\s*```$", "", s)
-    # 첫 { 부터 마지막 } 까지
-    start = s.find("{")
-    end = s.rfind("}")
-    if start >= 0 and end > start:
-        s = s[start : end + 1]
-    return json.loads(s)
+    # 혹시 JSON으로 반환하면 text 필드만 뽑기
+    if s.startswith("{") and s.endswith("}"):
+        try:
+            obj = json.loads(s)
+            if isinstance(obj, dict) and "text" in obj:
+                return str(obj["text"]).strip()
+        except json.JSONDecodeError:
+            pass
+    if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+        s = s[1:-1]
+    return s.strip()
 
 
 def write_post(topic: Topic, recent_topic_keys: list[str]) -> dict:
-    """주제에 맞춰 글을 작성. {text, card_title, card_subtitle} 반환."""
+    """주제에 맞춰 글을 작성. {text} 반환 (카드 필드는 더 이상 생성 안 함)."""
     client = Anthropic(api_key=config.ANTHROPIC_API_KEY)
     user_msg = USER_TEMPLATE.format(
         slot_kor=SLOT_KOR[topic.slot],
@@ -142,37 +143,36 @@ def write_post(topic: Topic, recent_topic_keys: list[str]) -> dict:
     )
     msg = client.messages.create(
         model=config.ANTHROPIC_MODEL,
-        max_tokens=900,
+        max_tokens=600,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_msg}],
     )
     raw = "".join(b.text for b in msg.content if hasattr(b, "text"))
-    data = _extract_json(raw)
+    text = _strip_wrappers(raw)
     # 500자 제한 보장
-    text = data.get("text", "").strip()
     if len(text) > 480:
         text = text[:480].rsplit("\n", 1)[0]
-    data["text"] = text
-    return data
+    return {"text": text}
 
 
 REPLY_SYSTEM = """너는 슬로우조깅 인플루언서 "슬로우7"의 답글 봇이다.
 
 [말투 — 톤 강도 9/10]
 - 권투선수가 후배 칭찬하듯 활기찬 반말, 짧고 펀치 있게
-- 댓글 단 사람의 닉네임을 친근하게 부르고 시작
-  좋은 예: "오 {username}!", "{username} 굿!", "야 {username}!", "{username} 한 방이다!"
-- 1~2문장, 최대 100자. 길게 늘어뜨리지 말 것. 잽처럼 짧게.
-- 댓글 내용을 정확히 읽고 그것에 응답. 동문서답 절대 금지.
+- 닉네임/아이디/@호출 절대 사용 금지. 바로 본론으로 시작
+- 1~2문장, 최대 100자. 길게 늘어뜨리지 말 것. 잽처럼 짧게
+- 댓글 내용을 정확히 읽고 그것에 응답. 동문서답 절대 금지
 - 이모지 0~1개 (🔥 💪 👊 등 절제)
 - 자주 쓰는 어미/감탄: "~다고!", "~잖아!", "~라구!", "가자!", "오케이!", "한 방이야!"
 
-[좋은 답글 예시]
-- 댓글: "오늘 처음 시작해봤어요" → 답글: "오 {u} 첫 발걸음! 그게 챔피언의 시작이라고 🔥"
-- 댓글: "무릎이 좀 아파요" → 답글: "야 {u} 앞꿈치 착지로 바꿔봐! 무릎 부담 확 줄어든다고 💪"
-- 댓글: "7분 페이스 어떻게 알아요?" → 답글: "{u} 옆 사람이랑 대화되면 그게 7분이야! 숨차면 더 늦춰!"
+[좋은 답글 예시 — 닉네임 호출 없이 바로 본론]
+- 댓글: "오늘 처음 시작해봤어요" → 답글: "오 첫 발걸음! 그게 챔피언의 시작이라고 🔥"
+- 댓글: "무릎이 좀 아파요" → 답글: "앞꿈치 착지로 바꿔봐! 무릎 부담 확 줄어든다고 💪"
+- 댓글: "7분 페이스 어떻게 알아요?" → 답글: "옆 사람이랑 대화되면 그게 7분이야! 숨차면 더 늦춰!"
+- 댓글: "다이어트 효과 있을까요?" → 답글: "느릴수록 지방이 타는 거야! 꾸준함이 진짜 한 방이라구 👊"
 
 [금지]
+- 닉네임/@아이디/이름 호출 절대 금지
 - 존댓말 절대 금지
 - AI/봇 언급 금지
 - 광고성 멘트, 의학적 단정 금지
@@ -184,22 +184,25 @@ REPLY_SYSTEM = """너는 슬로우조깅 인플루언서 "슬로우7"의 답글 
 
 
 def write_reply(comment_text: str, username: str | None, parent_post_text: str | None) -> str:
-    """댓글에 대한 마모루식 답글 생성."""
+    """댓글에 대한 마모루식 답글 생성. 닉네임 호출 없이 본론만."""
     client = Anthropic(api_key=config.ANTHROPIC_API_KEY)
     parent_text = parent_post_text or "(원본 게시물 텍스트 없음)"
+    # username을 일부러 프롬프트에서 빼서 모델이 호출하지 못하게 한다
     user_msg = (
         f"[내가 올린 원본 게시물]\n{parent_text}\n\n"
-        f"[달린 댓글]\n작성자: @{username or 'unknown'}\n내용: {comment_text}\n\n"
-        "이 댓글에 마모루 말투로 짧게 답글 작성. 본문만 출력."
+        f"[달린 댓글 내용]\n{comment_text}\n\n"
+        "이 댓글에 마모루 말투로 짧게 답글. 닉네임/아이디 호출 없이 바로 본론. 본문만 출력."
     )
     msg = client.messages.create(
         model=config.ANTHROPIC_MODEL,
-        max_tokens=200,
+        max_tokens=160,
         system=REPLY_SYSTEM,
         messages=[{"role": "user", "content": user_msg}],
     )
     text = "".join(b.text for b in msg.content if hasattr(b, "text")).strip()
-    # 혹시 따옴표 감싸져 있으면 벗기기
     if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
         text = text[1:-1]
-    return text[:480]
+    # 혹시 모델이 "@xxx" 또는 "오 xxx!" 같이 호출 시작하면 안전망으로 제거
+    text = re.sub(r"^[\s,.!]*@\S+[\s,.!]*", "", text)
+    text = re.sub(r"^[\s,.!]*[가-힣A-Za-z0-9_]+님[\s,.!]+", "", text)
+    return text[:480].strip()

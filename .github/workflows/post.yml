@@ -33,7 +33,7 @@ jobs:
       THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
       GITHUB_REPO: ${{ github.repository }}
       GITHUB_BRANCH: ${{ github.ref_name }}
-      ATTACH_CARD_IMAGE: "true"
+      ATTACH_CARD_IMAGE: "false"
       AUTO_REPLY_ENABLED: "true"
       DRY_RUN: ${{ vars.DRY_RUN || 'false' }}
 
@@ -44,16 +44,6 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-
-      - name: Install Korean fonts
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y fonts-nanum fonts-noto-cjk
-          fc-cache -fv
-          echo "=== 설치된 한글 폰트 ==="
-          ls -la /usr/share/fonts/truetype/nanum/ 2>/dev/null || echo "nanum 폴더 없음"
-          ls -la /usr/share/fonts/opentype/noto/ 2>/dev/null | head -5
-          fc-list :lang=ko | head -10
 
       - name: Install deps
         run: |
@@ -76,21 +66,8 @@ jobs:
             esac
           fi
 
-      - name: Prepare (글/카드 생성)
+      - name: Prepare (글 생성)
         run: python -m scripts.post prepare ${{ steps.slot.outputs.slot }}
-
-      - name: Commit media so raw URL is live
-        run: |
-          git config user.name "slow7-bot"
-          git config user.email "slow7-bot@users.noreply.github.com"
-          git add posted_media/ .pending.json
-          if ! git diff --staged --quiet; then
-            git commit -m "chore(media): ${{ steps.slot.outputs.slot }} card"
-            git push
-          fi
-
-      - name: Wait for raw CDN
-        run: sleep 25
 
       - name: Publish to Threads
         run: python -m scripts.post publish
