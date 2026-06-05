@@ -6,7 +6,12 @@
       "Bash(py --version)",
       "Bash(python -c \"import PIL\")",
       "Bash(python -m pip install --quiet Pillow python-dotenv)",
-      "Bash(python -m scripts.preview_card)"
+      "Bash(python -m scripts.preview_card)",
+      "WebSearch",
+      "Bash(git rm *)",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('src/writer.py', encoding='utf-8'\\).read\\(\\)\\); print\\('writer.py 구문 OK'\\)\")",
+      "Bash(ls -la slow7.db)"
     ]
   }
 }

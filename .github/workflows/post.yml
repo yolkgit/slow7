@@ -72,7 +72,7 @@ jobs:
       - name: 사람처럼 랜덤 지연 (수동 실행 시 생략)
         if: ${{ github.event_name == 'schedule' }}
         run: |
-          DELAY=$((RANDOM % 900))   # 0~15분(900초) 랜덤
+          DELAY=$((RANDOM % 180))   # 0~3분(180초) 랜덤 — Actions 분 절약
           echo "게시 전 ${DELAY}초 대기 (자연스러운 게시 시각 분산)"
           sleep $DELAY
 

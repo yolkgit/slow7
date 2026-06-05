@@ -2,7 +2,7 @@ name: Slow7 Auto Reply
 
 on:
   schedule:
-    - cron: "*/30 * * * *"   # 30분마다
+    - cron: "23 * * * *"   # 매시간 :23분 (무료 한도 절약 + 정시 회피)
   workflow_dispatch:
 
 permissions:
