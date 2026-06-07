@@ -1,8 +1,8 @@
 name: Slow7 Auto Reply
 
 on:
-  schedule:
-    - cron: "23 * * * *"   # 매시간 :23분 (무료 한도 절약 + 정시 회피)
+  # GitHub schedule 지연 문제로 사용 안 함.
+  # cron-job.org가 15분마다 workflow_dispatch로 트리거함.
   workflow_dispatch:
 
 permissions:

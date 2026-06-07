@@ -1,12 +1,8 @@
 name: Slow7 Auto Post
 
 on:
-  schedule:
-    # KST = UTC+9. 정각을 피해 골든타임 + 약간 비정시로 (봇 티 줄이기)
-    # 실제 게시는 아래 "사람처럼 랜덤 지연" 단계에서 0~15분 더 늦춰짐
-    - cron: "52 21 * * *"   # 06:52 KST → 아침 (출근길)
-    - cron: "48 2 * * *"    # 11:48 KST → 점심
-    - cron: "27 11 * * *"   # 20:27 KST → 저녁 (퇴근 후 골든타임)
+  # GitHub schedule은 1~3시간 지연 문제로 사용 안 함.
+  # cron-job.org가 정확한 KST에 workflow_dispatch로 트리거함.
   workflow_dispatch:
     inputs:
       slot:

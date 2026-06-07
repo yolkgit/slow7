@@ -4,8 +4,8 @@ name: Slow7 Track Performance
 # 이 점수가 다음 게시 때 잘되는 토픽을 더 자주 뽑도록 자동 반영됨.
 
 on:
-  schedule:
-    - cron: "0 15 * * *"   # 매일 00:00 KST (하루치 성과 마감 집계)
+  # 외부 cron(cron-job.org)이 트리거.
+  # 매일 00:00 KST 또는 원할 때 수동 실행도 가능.
   workflow_dispatch:
 
 permissions:
