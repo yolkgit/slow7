@@ -109,6 +109,15 @@ def has_replied(comment_id: str) -> bool:
     return row is not None
 
 
+def is_our_reply(reply_id: str) -> bool:
+    """이 ID가 우리(봇)가 직접 만든 답글의 ID인지 — 자기 답글에 또 답하지 않게."""
+    with conn() as c:
+        row = c.execute(
+            "SELECT 1 FROM replied WHERE reply_id = ?", (reply_id,)
+        ).fetchone()
+    return row is not None
+
+
 def record_reply(comment_id: str, parent_post_id: str | None, reply_id: str | None) -> None:
     with conn() as c:
         c.execute(
