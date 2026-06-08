@@ -94,9 +94,25 @@ def fetch_conversation(post_id: str) -> list[dict]:
 
 
 def fetch_user_posts(limit: int = 10) -> list[dict]:
+    """본인 메인 게시물(top-level threads) 목록."""
     fields = "id,text,timestamp,permalink"
     r = _req("GET", f"/{config.THREADS_USER_ID}/threads", params={"fields": fields, "limit": limit})
     return r.get("data", [])
+
+
+def fetch_user_replies(limit: int = 25) -> list[dict]:
+    """본인이 단 답글 목록 — 다른 사람 게시물에 단 답글도 포함.
+
+    이걸 폴링해야 본인이 외부에 단 답글에 누가 응답했을 때 자동 답글이 가능.
+    권한 없으면 빈 리스트 반환.
+    """
+    try:
+        fields = "id,text,timestamp,permalink,root_post"
+        r = _req("GET", f"/{config.THREADS_USER_ID}/replies", params={"fields": fields, "limit": limit})
+        return r.get("data", [])
+    except ThreadsError as e:
+        print(f"[threads_client] fetch_user_replies 실패 (권한/엔드포인트 확인 필요): {e}")
+        return []
 
 
 def search_topic(query: str, search_type: str = "TOP", limit: int = 20) -> list[dict]:

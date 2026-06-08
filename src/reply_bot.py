@@ -71,13 +71,30 @@ def run(max_posts: int = 10, dry_run: bool | None = None) -> int:
     db.init()
     my_id = config.THREADS_USER_ID
     my_username = _my_username()  # 캐시 워밍업
-    posts = threads_client.fetch_user_posts(limit=max_posts)
+
+    # 본인 메인 게시물 + 본인이 단 답글 둘 다 추적
+    # → 다른 사람 글에 단 내 답글에 누가 응답해도 자동 답글 가능
+    main_posts = threads_client.fetch_user_posts(limit=max_posts)
+    my_replies = threads_client.fetch_user_replies(limit=max_posts * 2)
+    # 중복 제거 (id 기준)
+    seen_ids = set()
+    threads_to_track: list[dict] = []
+    for t in main_posts + my_replies:
+        tid = t.get("id")
+        if tid and tid not in seen_ids:
+            seen_ids.add(tid)
+            threads_to_track.append(t)
+    print(
+        f"[reply_bot] 추적 대상: 메인 {len(main_posts)}개 + 답글 {len(my_replies)}개 "
+        f"= 합계 {len(threads_to_track)}개 (중복 제거)"
+    )
+
     replied = 0
     skipped_self = 0
     skipped_queue = 0  # 한도 초과로 못한 미답글 수 (모니터링용)
     reached_limit = False
 
-    for post in posts:
+    for post in threads_to_track:
         post_id = post["id"]
         post_text = post.get("text", "")
         try:
