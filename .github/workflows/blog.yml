@@ -1,0 +1,86 @@
+name: Slow7 Blog Auto Publish
+
+# 슬로우조깅 정보 블로그 글을 워드프레스에 자동 발행.
+# 외부 cron(cron-job.org) 또는 GitHub schedule로 트리거.
+
+on:
+  schedule:
+    # 하루 1회 — KST 오전 9시 (09:00 KST = 00:00 UTC). GitHub 지연 감안해 비정시.
+    - cron: "40 23 * * *"   # 약 08:40 KST
+  workflow_dispatch:
+    inputs:
+      topic_key:
+        description: "특정 토픽 키 (비우면 자동 선택)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: slow7-shared-db
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001' }}
+      WP_SITE_URL: ${{ secrets.WP_SITE_URL }}
+      WP_USERNAME: ${{ secrets.WP_USERNAME }}
+      WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+      WP_DEFAULT_CATEGORY: ${{ vars.WP_DEFAULT_CATEGORY || '슬로우조깅' }}
+      WP_POST_STATUS: ${{ vars.WP_POST_STATUS || 'publish' }}
+      GITHUB_REPO: ${{ github.repository }}
+      GITHUB_BRANCH: ${{ github.ref_name }}
+      ATTACH_CARD_IMAGE: ${{ vars.ATTACH_CARD_IMAGE || 'true' }}
+      DRY_RUN: ${{ vars.DRY_RUN || 'false' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Korean fonts (썸네일용)
+        if: ${{ vars.ATTACH_CARD_IMAGE != 'false' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-nanum
+          fc-cache -f
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Publish blog post
+        run: python -m scripts.publish_blog ${{ inputs.topic_key }}
+
+      - name: Commit DB
+        if: always()
+        run: |
+          git config user.name "slow7-bot"
+          git config user.email "slow7-bot@users.noreply.github.com"
+          git add slow7.db posted_media/ || true
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "chore(db): blog post record"
+          for i in 1 2 3; do
+            if git pull --rebase -X ours; then
+              if git push; then
+                echo "Push OK (attempt $i)"; exit 0
+              fi
+            else
+              git rebase --abort 2>/dev/null || true
+            fi
+            sleep $((RANDOM % 8 + 3))
+          done
+          echo "Push retries exhausted, but publish succeeded"
+          exit 0

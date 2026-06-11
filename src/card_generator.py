@@ -52,13 +52,13 @@ def _load_font(size: int) -> ImageFont.FreeTypeFont:
             else:
                 font = ImageFont.truetype(path, size=size)
             if path not in _FONT_LOGGED:
-                print(f"[card_generator] ✅ 사용 폰트: {path}")
+                print(f"[card_generator] font: {path}")
                 _FONT_LOGGED.add(path)
             return font
         except OSError as e:
-            print(f"[card_generator] ⚠️  {path} 로드 실패: {e}")
+            print(f"[card_generator] {path} load failed: {e}")
             continue
-    print("[card_generator] ❌ 한글 폰트 찾기 실패. 모든 후보:")
+    print("[card_generator] no Korean font found. candidates:")
     for p in FONT_CANDIDATES:
         print(f"  - {p}: {'있음' if os.path.exists(p) else '없음'}")
     return ImageFont.load_default()
