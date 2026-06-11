@@ -82,11 +82,15 @@ USER_TEMPLATE = """[오늘의 블로그 글 작성 지시]
 
 
 # 건강 정보 면책 문구 — 모든 글 끝에 자동 삽입 (YMYL 신뢰도 + 법적 안전)
+# 작은 회색 글씨로 표시해서 본문과 구분 (시선 분산 최소화)
 DISCLAIMER_HTML = (
-    '<hr>\n<p><em>※ 이 글은 슬로우조깅에 대한 일반적인 정보 제공을 목적으로 하며, '
-    '의학적 진단이나 치료를 대신하지 않는다. 지병이 있거나 부상 이력이 있다면 '
-    '운동 시작 전 전문가(의사·트레이너)와 상담하는 걸 권한다. 자기 몸 상태에 맞춰 '
-    '무리 없이 시작하는 게 가장 중요하다고!</em></p>'
+    '<hr>\n'
+    '<p style="font-size:0.8em; color:#999; line-height:1.6;"><small>'
+    '※ 이 글은 슬로우조깅에 대한 일반적인 정보 제공을 목적으로 하며, '
+    '의학적 진단이나 치료를 대신하지 않습니다. 지병이 있거나 부상 이력이 있다면 '
+    '운동 시작 전 전문가(의사·트레이너)와 상담하시기 바랍니다. '
+    '자기 몸 상태에 맞춰 무리 없이 시작하는 것이 가장 중요합니다.'
+    '</small></p>'
 )
 
 
@@ -129,4 +133,47 @@ def write_blog_post(topic: Topic, recent_topic_keys: list[str]) -> dict:
     # 건강 정보 면책 문구 자동 첨부 (중복 방지)
     if "면책" not in data["content_html"] and "정보 제공을 목적" not in data["content_html"]:
         data["content_html"] = data["content_html"].rstrip() + "\n" + DISCLAIMER_HTML
+    return data
+
+
+REVISE_SYSTEM = """너는 슬로우조깅 블로그 "슬로우7"의 편집자다.
+기존 블로그 글과 편집 지시를 받고, 지시대로 글을 수정한다.
+
+[규칙]
+- 마모루 톤(활기찬 반말) 유지
+- 지시받은 부분만 수정, 나머지는 최대한 보존
+- HTML 구조(<h2>, <p>, <ul> 등) 유지
+- 맨 아래 면책 문구(※ 로 시작하는 작은 글씨)는 건드리지 말고 그대로 둘 것
+- 거짓 정보/가짜 출처 추가 금지
+
+[출력 형식 — 반드시 JSON]
+{
+  "title": "<수정된 제목 (제목 수정 지시 없으면 원래 제목 그대로)>",
+  "content_html": "<수정된 본문 HTML 전체>"
+}
+JSON 외 텍스트 출력 금지.
+"""
+
+
+def revise_blog_post(current_title: str, current_html: str, instruction: str) -> dict:
+    """기존 글 + 수정 지시 → 수정된 {title, content_html}."""
+    client = Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    user_msg = (
+        f"[기존 제목]\n{current_title}\n\n"
+        f"[기존 본문 HTML]\n{current_html}\n\n"
+        f"[편집 지시]\n{instruction}\n\n"
+        "지시대로 수정해서 JSON으로만 출력."
+    )
+    msg = client.messages.create(
+        model=config.ANTHROPIC_MODEL,
+        max_tokens=3500,
+        system=REVISE_SYSTEM,
+        messages=[{"role": "user", "content": user_msg}],
+    )
+    raw = "".join(b.text for b in msg.content if hasattr(b, "text"))
+    data = _extract_json(raw)
+    data.setdefault("title", current_title)
+    data.setdefault("content_html", current_html)
+    if not data["content_html"].strip():
+        data["content_html"] = current_html
     return data

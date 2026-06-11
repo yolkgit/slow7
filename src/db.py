@@ -45,10 +45,29 @@ CREATE TABLE IF NOT EXISTS commented_external (
     commented_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS review_queue (
+    -- 텔레그램 검수 대기 글
+    wp_post_id TEXT PRIMARY KEY,    -- 워드프레스 글 ID
+    topic_key TEXT,
+    title TEXT,
+    wp_link TEXT,
+    content_html TEXT,              -- 현재 본문 (수정 시 갱신)
+    status TEXT NOT NULL,           -- pending(검수대기) / published / skipped
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS kv (
+    -- 잡다한 상태 저장 (텔레그램 last_update_id 등)
+    k TEXT PRIMARY KEY,
+    v TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_posts_topic ON posts(topic_key);
 CREATE INDEX IF NOT EXISTS idx_posts_slot ON posts(slot);
 CREATE INDEX IF NOT EXISTS idx_ext_user ON commented_external(target_username);
 CREATE INDEX IF NOT EXISTS idx_ext_time ON commented_external(commented_at);
+CREATE INDEX IF NOT EXISTS idx_review_status ON review_queue(status);
 """
 
 
@@ -230,3 +249,66 @@ def record_external_comment(
             "VALUES (?, ?, ?, ?, ?, ?)",
             (target_post_id, target_username, target_text_snippet[:200], comment_id, keyword, int(time.time())),
         )
+
+
+# ---------- 검수 큐 (텔레그램) ----------
+
+def add_review(wp_post_id: str, topic_key: str, title: str, wp_link: str, content_html: str) -> None:
+    now = int(time.time())
+    with conn() as c:
+        c.execute(
+            "INSERT OR REPLACE INTO review_queue "
+            "(wp_post_id, topic_key, title, wp_link, content_html, status, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
+            (wp_post_id, topic_key, title, wp_link, content_html, now, now),
+        )
+
+
+def oldest_pending_review() -> dict | None:
+    """가장 오래된 검수 대기 글 1개 (현재 활성 검수 대상)."""
+    with conn() as c:
+        row = c.execute(
+            "SELECT * FROM review_queue WHERE status='pending' ORDER BY created_at ASC LIMIT 1"
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def pending_review_count() -> int:
+    with conn() as c:
+        row = c.execute("SELECT COUNT(*) AS n FROM review_queue WHERE status='pending'").fetchone()
+    return int(row["n"]) if row else 0
+
+
+def update_review_content(wp_post_id: str, content_html: str, title: str | None = None) -> None:
+    with conn() as c:
+        if title is not None:
+            c.execute(
+                "UPDATE review_queue SET content_html=?, title=?, updated_at=? WHERE wp_post_id=?",
+                (content_html, title, int(time.time()), wp_post_id),
+            )
+        else:
+            c.execute(
+                "UPDATE review_queue SET content_html=?, updated_at=? WHERE wp_post_id=?",
+                (content_html, int(time.time()), wp_post_id),
+            )
+
+
+def mark_review_status(wp_post_id: str, status: str) -> None:
+    with conn() as c:
+        c.execute(
+            "UPDATE review_queue SET status=?, updated_at=? WHERE wp_post_id=?",
+            (status, int(time.time()), wp_post_id),
+        )
+
+
+# ---------- KV 스토어 ----------
+
+def kv_get(key: str, default: str | None = None) -> str | None:
+    with conn() as c:
+        row = c.execute("SELECT v FROM kv WHERE k=?", (key,)).fetchone()
+    return row["v"] if row else default
+
+
+def kv_set(key: str, value: str) -> None:
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)", (key, value))

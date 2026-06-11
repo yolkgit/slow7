@@ -79,7 +79,9 @@ def main(topic_key: str | None = None) -> int:
         except Exception as e:
             print(f"[blog] 썸네일 처리 실패(무시하고 진행): {e}")
 
-    # 발행
+    # 검수 모드면 무조건 draft로 생성 (사용자 '발행' 응답 후 공개)
+    status = "draft" if config.REVIEW_MODE else config.WP_POST_STATUS
+
     try:
         result = wordpress_client.create_post(
             title=post["title"],
@@ -89,18 +91,59 @@ def main(topic_key: str | None = None) -> int:
             tags=post["tags"],
             featured_media_id=featured_id,
             slug=post["slug"],
+            status=status,
         )
     except wordpress_client.WordPressError as e:
-        print(f"[blog] ❌ 발행 실패: {e}")
+        print(f"[blog] ❌ 생성 실패: {e}")
         return 1
 
     link = result.get("link", "(unknown)")
     wp_id = result.get("id", 0)
-    print(f"[blog] ✅ 발행 완료: {link}")
+    print(f"[blog] ✅ 초안 생성 완료 (status={status}): {link}")
 
-    # DB 기록 (threads_id 칸을 wp post id로 재활용)
+    # DB 기록
     db.record_post(str(wp_id) if wp_id else None, "blog", topic.key, post["title"], link)
+
+    # 검수 모드 — 검수 큐 등록 + 텔레그램 알림
+    if config.REVIEW_MODE and wp_id:
+        db.add_review(str(wp_id), topic.key, post["title"], link, post["content_html"])
+        _notify_telegram(post, link, wp_id)
+
     return 0
+
+
+def _strip_html(html: str, limit: int = 400) -> str:
+    """HTML 태그 제거하고 미리보기 텍스트 추출."""
+    import re
+    text = re.sub(r"<[^>]+>", "", html)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:limit] + ("…" if len(text) > limit else "")
+
+
+def _notify_telegram(post: dict, link: str, wp_id) -> None:
+    """검수 알림 발송."""
+    if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID:
+        print("[blog] 텔레그램 미설정 → 알림 생략 (draft로만 저장됨)")
+        return
+    try:
+        from src import telegram_client
+        preview = _strip_html(post["content_html"], 350)
+        pending = db.pending_review_count()
+        msg = (
+            f"📝 <b>새 블로그 초안</b> (대기 {pending}개)\n\n"
+            f"<b>{post['title']}</b>\n\n"
+            f"{preview}\n\n"
+            f"🏷 {' '.join('#'+t for t in post.get('tags', [])[:5])}\n"
+            f"🔗 <a href=\"{link}\">미리보기</a>\n\n"
+            f"━━━━━━━━━━\n"
+            f"✅ 좋으면 <b>발행</b> 이라고 답장\n"
+            f"✏️ 고칠 게 있으면 수정 내용을 그대로 답장\n"
+            f"   (예: \"마지막 문단 더 짧게\", \"제목 더 자극적으로\")"
+        )
+        telegram_client.send_message(msg)
+        print("[blog] 📱 텔레그램 검수 알림 전송 완료")
+    except Exception as e:
+        print(f"[blog] 텔레그램 알림 실패(무시): {e}")
 
 
 if __name__ == "__main__":

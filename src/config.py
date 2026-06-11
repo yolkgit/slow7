@@ -32,8 +32,14 @@ WP_APP_PASSWORD = os.getenv("WP_APP_PASSWORD", "")       # Application Password 
 WP_DEFAULT_CATEGORY = os.getenv("WP_DEFAULT_CATEGORY", "슬로우조깅")
 WP_POST_STATUS = os.getenv("WP_POST_STATUS", "publish")  # publish | draft
 
+# ===== Telegram (검수 봇) =====
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+
 ATTACH_CARD_IMAGE = _bool("ATTACH_CARD_IMAGE", True)
 AUTO_REPLY_ENABLED = _bool("AUTO_REPLY_ENABLED", True)
+# 검수 모드: true면 생성 후 draft+텔레그램 알림, 사용자 '발행' 응답 시 공개
+REVIEW_MODE = _bool("REVIEW_MODE", True)
 DRY_RUN = _bool("DRY_RUN", False)
 
 BRAND_NAME = "슬로우7"

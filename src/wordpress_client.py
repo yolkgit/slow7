@@ -146,6 +146,26 @@ def create_post(
     return _req("POST", "posts", json=payload)
 
 
+def update_post(
+    post_id: str | int,
+    title: str | None = None,
+    content_html: str | None = None,
+    status: str | None = None,
+) -> dict:
+    """기존 글 수정. 제목/본문/상태 중 준 것만 갱신."""
+    if config.DRY_RUN:
+        print(f"[DRY_RUN] update_post {post_id} status={status}")
+        return {"id": post_id, "link": "(dry-run)"}
+    payload: dict[str, Any] = {}
+    if title is not None:
+        payload["title"] = title
+    if content_html is not None:
+        payload["content"] = content_html
+    if status is not None:
+        payload["status"] = status
+    return _req("POST", f"posts/{post_id}", json=payload)
+
+
 def whoami() -> dict:
     """인증 확인용 — 현재 사용자 정보."""
     url = f"{config.WP_SITE_URL}/wp-json/wp/v2/users/me"
