@@ -54,17 +54,22 @@ BLOG_SYSTEM = """너는 슬로우조깅 정보 블로그 "슬로우7"의 메인 
 - 거짓 정보, 과장된 효능, 없는 연구 인용 (가짜 출처 절대 금지)
 - 외부 링크나 광고 문구 (제휴는 나중에 사람이 직접 삽입)
 
-[출력 형식 — 반드시 JSON]
+[출력 형식 — 정확히 이 형식으로]
+먼저 메타데이터를 JSON으로 출력하고, 그 다음 줄에 ===CONTENT=== 구분선,
+그 아래에 본문 HTML을 출력한다. (본문은 JSON 안에 넣지 마라 — 따옴표 충돌 방지)
+
 {
-  "title": "<SEO 제목 — 28자 이내, 핵심 키워드 포함, 클릭 유도. 예: '슬로우조깅 효과, 7분 페이스가 살 빼는 진짜 이유'>",
+  "title": "<SEO 제목 — 28자 이내, 핵심 키워드 포함, 클릭 유도>",
   "slug": "<영문 소문자 슬러그, 하이픈 구분. 예: slow-jogging-fat-burn>",
-  "meta_description": "<검색결과에 뜨는 요약 — 80~120자, 키워드 포함>",
-  "content_html": "<본문 HTML — h2/p/ul 태그 사용. 제목(h1)은 넣지 말 것>",
+  "meta_description": "<검색결과 요약 — 80~120자>",
   "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
   "card_title": "<썸네일용 큰 제목 12자 이내>",
   "card_subtitle": "<썸네일용 부제 22자 이내>"
 }
-JSON 외의 텍스트는 일체 출력하지 마라.
+===CONTENT===
+<여기에 본문 HTML. h2/p/ul/strong 태그 사용. 제목(h1)은 넣지 말 것. 따옴표 자유롭게 사용 가능.>
+
+위 형식 외의 설명은 일체 출력하지 마라.
 """
 
 
@@ -94,7 +99,11 @@ DISCLAIMER_HTML = (
 )
 
 
+CONTENT_MARKER = "===CONTENT==="
+
+
 def _extract_json(s: str) -> dict:
+    """순수 JSON 블록만 파싱 (본문 분리 전 메타데이터용)."""
     s = s.strip()
     s = re.sub(r"^```(?:json)?\s*", "", s)
     s = re.sub(r"\s*```$", "", s)
@@ -102,6 +111,33 @@ def _extract_json(s: str) -> dict:
     if start >= 0 and end > start:
         s = s[start : end + 1]
     return json.loads(s)
+
+
+def _parse_meta_and_content(raw: str) -> tuple[dict, str]:
+    """===CONTENT=== 구분자로 메타(JSON)와 본문(HTML)을 분리."""
+    raw = raw.strip()
+    raw = re.sub(r"^```(?:json|html)?\s*", "", raw)
+    raw = re.sub(r"\s*```$", "", raw)
+
+    if CONTENT_MARKER in raw:
+        meta_part, content_part = raw.split(CONTENT_MARKER, 1)
+    else:
+        # 구분자 없으면 — JSON 끝(}) 이후를 본문으로 간주
+        end = raw.rfind("}")
+        if end >= 0:
+            meta_part, content_part = raw[: end + 1], raw[end + 1 :]
+        else:
+            meta_part, content_part = raw, ""
+
+    try:
+        meta = _extract_json(meta_part)
+    except json.JSONDecodeError:
+        meta = {}
+
+    content = content_part.strip()
+    content = re.sub(r"^```(?:html)?\s*", "", content)
+    content = re.sub(r"\s*```$", "", content).strip()
+    return meta, content
 
 
 def write_blog_post(topic: Topic, recent_topic_keys: list[str]) -> dict:
@@ -120,18 +156,18 @@ def write_blog_post(topic: Topic, recent_topic_keys: list[str]) -> dict:
         messages=[{"role": "user", "content": user_msg}],
     )
     raw = "".join(b.text for b in msg.content if hasattr(b, "text"))
-    data = _extract_json(raw)
+    data, content_html = _parse_meta_and_content(raw)
+    data["content_html"] = content_html
 
     # 필수 필드 검증 + 폴백
     data.setdefault("title", topic.title)
-    data.setdefault("content_html", "")
     data.setdefault("meta_description", topic.angle)
     data.setdefault("tags", [t.lstrip("#") for t in topic.hashtags])
     data.setdefault("slug", topic.key.replace("_", "-"))
     if not data["content_html"].strip():
         raise ValueError("content_html이 비어있음 — 생성 실패")
     # 건강 정보 면책 문구 자동 첨부 (중복 방지)
-    if "면책" not in data["content_html"] and "정보 제공을 목적" not in data["content_html"]:
+    if "정보 제공을 목적" not in data["content_html"]:
         data["content_html"] = data["content_html"].rstrip() + "\n" + DISCLAIMER_HTML
     return data
 
@@ -146,12 +182,17 @@ REVISE_SYSTEM = """너는 슬로우조깅 블로그 "슬로우7"의 편집자다
 - 맨 아래 면책 문구(※ 로 시작하는 작은 글씨)는 건드리지 말고 그대로 둘 것
 - 거짓 정보/가짜 출처 추가 금지
 
-[출력 형식 — 반드시 JSON]
+[출력 형식 — 정확히 이 형식으로]
+먼저 제목을 JSON으로, 그 다음 ===CONTENT=== 구분선, 그 아래 본문 HTML 전체.
+(본문은 JSON 안에 넣지 마라 — 따옴표 충돌 방지)
+
 {
-  "title": "<수정된 제목 (제목 수정 지시 없으면 원래 제목 그대로)>",
-  "content_html": "<수정된 본문 HTML 전체>"
+  "title": "<수정된 제목 (제목 수정 지시 없으면 원래 제목 그대로)>"
 }
-JSON 외 텍스트 출력 금지.
+===CONTENT===
+<수정된 본문 HTML 전체. 따옴표 자유롭게 사용 가능.>
+
+위 형식 외의 설명은 출력하지 마라.
 """
 
 
@@ -162,7 +203,7 @@ def revise_blog_post(current_title: str, current_html: str, instruction: str) ->
         f"[기존 제목]\n{current_title}\n\n"
         f"[기존 본문 HTML]\n{current_html}\n\n"
         f"[편집 지시]\n{instruction}\n\n"
-        "지시대로 수정해서 JSON으로만 출력."
+        "지시대로 수정해서 위 형식으로 출력."
     )
     msg = client.messages.create(
         model=config.ANTHROPIC_MODEL,
@@ -171,9 +212,8 @@ def revise_blog_post(current_title: str, current_html: str, instruction: str) ->
         messages=[{"role": "user", "content": user_msg}],
     )
     raw = "".join(b.text for b in msg.content if hasattr(b, "text"))
-    data = _extract_json(raw)
-    data.setdefault("title", current_title)
-    data.setdefault("content_html", current_html)
-    if not data["content_html"].strip():
-        data["content_html"] = current_html
-    return data
+    data, content_html = _parse_meta_and_content(raw)
+    title = data.get("title") or current_title
+    if not content_html.strip():
+        content_html = current_html
+    return {"title": title, "content_html": content_html}
