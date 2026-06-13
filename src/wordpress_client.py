@@ -146,6 +146,17 @@ def create_post(
     return _req("POST", "posts", json=payload)
 
 
+def media_url(media_id: int) -> str:
+    """업로드된 미디어의 공개 URL(source_url) 반환."""
+    if not media_id or config.DRY_RUN:
+        return ""
+    try:
+        data = _req("GET", f"media/{media_id}")
+        return data.get("source_url", "") if isinstance(data, dict) else ""
+    except WordPressError:
+        return ""
+
+
 def update_post(
     post_id: str | int,
     title: str | None = None,

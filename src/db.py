@@ -301,6 +301,25 @@ def mark_review_status(wp_post_id: str, status: str) -> None:
         )
 
 
+def published_blog_links(limit: int = 8, exclude_wp_id: str | None = None) -> list[dict]:
+    """이미 발행(published)된 블로그 글의 (title, wp_link) 목록 — 내부 링크용."""
+    with conn() as c:
+        rows = c.execute(
+            "SELECT wp_post_id, title, wp_link FROM review_queue "
+            "WHERE status='published' AND wp_link IS NOT NULL AND wp_link != '' "
+            "ORDER BY updated_at DESC LIMIT ?",
+            (limit + 1,),
+        ).fetchall()
+    out = []
+    for r in rows:
+        if exclude_wp_id and str(r["wp_post_id"]) == str(exclude_wp_id):
+            continue
+        out.append({"title": r["title"], "link": r["wp_link"]})
+        if len(out) >= limit:
+            break
+    return out
+
+
 # ---------- KV 스토어 ----------
 
 def kv_get(key: str, default: str | None = None) -> str | None:

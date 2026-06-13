@@ -19,7 +19,39 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src import blog_writer, card_generator, config, db, topics, wordpress_client
+from src import blog_writer, card_generator, config, db, image_search, topics, wordpress_client
+
+
+def _insert_before_disclaimer(content_html: str, html_block: str) -> str:
+    """면책 문구(<hr>로 시작) 앞에 블록 삽입. 없으면 맨 끝에."""
+    idx = content_html.rfind("<hr>")
+    if idx >= 0:
+        return content_html[:idx] + html_block + "\n" + content_html[idx:]
+    return content_html.rstrip() + "\n" + html_block
+
+
+def _insert_after_first_h2(content_html: str, html_block: str) -> str:
+    """첫 번째 </h2> 다음에 블록 삽입 (본문 중간 이미지용)."""
+    import re
+    m = re.search(r"</h2>", content_html)
+    if m:
+        pos = m.end()
+        return content_html[:pos] + "\n" + html_block + "\n" + content_html[pos:]
+    # h2 없으면 첫 문단 뒤
+    m = re.search(r"</p>", content_html)
+    if m:
+        pos = m.end()
+        return content_html[:pos] + "\n" + html_block + "\n" + content_html[pos:]
+    return html_block + "\n" + content_html
+
+
+def _build_related_links_html(exclude_wp_id: str | None) -> str:
+    """발행된 글 중 최대 4개를 '함께 읽으면 좋은 글'로."""
+    links = db.published_blog_links(limit=4, exclude_wp_id=exclude_wp_id)
+    if not links:
+        return ""
+    items = "".join(f'<li><a href="{l["link"]}">{l["title"]}</a></li>' for l in links)
+    return f"<h2>함께 읽으면 좋은 글</h2>\n<ul>{items}</ul>"
 
 
 def main(topic_key: str | None = None) -> int:
@@ -58,6 +90,38 @@ def main(topic_key: str | None = None) -> int:
     print(f"[blog] 슬러그: {post['slug']}")
     print(f"[blog] 메타: {post['meta_description']}")
     print(f"[blog] 태그: {post['tags']}")
+
+    # 본문 이미지 (Pexels) — 첫 H2 뒤에 삽입
+    try:
+        photo = image_search.search_and_download(topic.title, post.get("tags", []))
+        if photo:
+            img_id = wordpress_client.upload_media(photo["path"], alt_text=photo["alt"])
+            src = wordpress_client.media_url(img_id) if img_id else ""
+            if src:
+                caption = (
+                    f'<figure><img src="{src}" alt="{photo["alt"]}" '
+                    f'style="max-width:100%;height:auto;border-radius:8px;">'
+                    f'<figcaption style="font-size:0.75em;color:#aaa;text-align:center;">'
+                    f'Photo by <a href="{photo["photographer_url"]}" rel="nofollow" target="_blank">'
+                    f'{photo["photographer"]}</a> on Pexels</figcaption></figure>'
+                )
+                post["content_html"] = _insert_after_first_h2(post["content_html"], caption)
+                print(f"[blog] 본문 이미지 삽입 (Pexels: {photo['query']})")
+            try:
+                photo["path"].unlink(missing_ok=True)
+            except Exception:
+                pass
+        else:
+            print("[blog] Pexels 미설정/결과없음 → 본문 이미지 생략")
+    except Exception as e:
+        print(f"[blog] 본문 이미지 실패(무시): {e}")
+
+    # 내부 링크 (발행된 글 → '함께 읽으면 좋은 글')
+    related = _build_related_links_html(exclude_wp_id=None)
+    if related:
+        post["content_html"] = _insert_before_disclaimer(post["content_html"], related)
+        print("[blog] 내부 링크 삽입")
+
     print(f"[blog] 본문 길이: {len(post['content_html'])}자")
 
     # 대표 이미지 (카드 썸네일)

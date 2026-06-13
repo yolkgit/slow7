@@ -36,6 +36,9 @@ WP_POST_STATUS = os.getenv("WP_POST_STATUS", "publish")  # publish | draft
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
+# ===== Pexels (본문 이미지, 무료) =====
+PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
+
 ATTACH_CARD_IMAGE = _bool("ATTACH_CARD_IMAGE", True)
 AUTO_REPLY_ENABLED = _bool("AUTO_REPLY_ENABLED", True)
 # 검수 모드: true면 생성 후 draft+텔레그램 알림, 사용자 '발행' 응답 시 공개
