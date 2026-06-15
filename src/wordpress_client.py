@@ -120,6 +120,8 @@ def create_post(
     featured_media_id: int | None = None,
     status: str | None = None,
     slug: str | None = None,
+    yoast_metadesc: str | None = None,
+    yoast_focuskw: str | None = None,
 ) -> dict:
     """글 발행. 발행된 글 정보(dict) 반환 ({id, link, ...})."""
     status = status or config.WP_POST_STATUS
@@ -142,6 +144,15 @@ def create_post(
         payload["tags"] = ensure_tags(tags)
     if featured_media_id:
         payload["featured_media"] = featured_media_id
+
+    # Yoast SEO 메타 (mu-plugin이 REST 노출했을 때만 반영됨. 없어도 에러 안 남)
+    meta: dict[str, str] = {}
+    if yoast_metadesc:
+        meta["_yoast_wpseo_metadesc"] = yoast_metadesc
+    if yoast_focuskw:
+        meta["_yoast_wpseo_focuskw"] = yoast_focuskw
+    if meta:
+        payload["meta"] = meta
 
     return _req("POST", "posts", json=payload)
 

@@ -156,6 +156,8 @@ def main(topic_key: str | None = None) -> int:
             featured_media_id=featured_id,
             slug=post["slug"],
             status=status,
+            yoast_metadesc=post["meta_description"],
+            yoast_focuskw=(post["tags"][0] if post.get("tags") else None),
         )
     except wordpress_client.WordPressError as e:
         print(f"[blog] ❌ 생성 실패: {e}")
