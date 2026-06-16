@@ -82,7 +82,8 @@ def main(topic_key: str | None = None) -> int:
         else:
             topic = random.choice(candidates)
 
-    print(f"[blog] 토픽: {topic.key} ({topic.title})")
+    level = topics.topic_level(topic)
+    print(f"[blog] 토픽: {topic.key} ({topic.title}) [난이도: {level}]")
 
     # 글 생성
     post = blog_writer.write_blog_post(topic, list(exclude)[:10])
@@ -151,7 +152,7 @@ def main(topic_key: str | None = None) -> int:
             title=post["title"],
             content_html=post["content_html"],
             excerpt=post["meta_description"],
-            category=config.WP_DEFAULT_CATEGORY,
+            category=level,  # 난이도 카테고리 (초급/중급/고급)
             tags=post["tags"],
             featured_media_id=featured_id,
             slug=post["slug"],

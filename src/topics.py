@@ -18,6 +18,22 @@ class Topic:
     title: str         # 간단 주제
     angle: str         # 어떤 각도로 풀지
     hashtags: tuple[str, ...]
+    level: str = ""    # 초급/중급/고급. 비우면 slot·종류로 자동 추론
+
+
+# 난이도 카테고리 (워드프레스 카테고리로 사용)
+LEVELS = ("초급", "중급", "고급")
+
+
+def topic_level(t: "Topic") -> str:
+    """토픽 난이도. 명시값 우선, 없으면 종류·slot으로 추론."""
+    if t.level:
+        return t.level
+    if t.key.startswith("c_"):   # 비교형 = 입문자가 많이 검색
+        return "초급"
+    if t.key.startswith("p_"):   # 루틴/플랜 = 어느 정도 시작한 사람
+        return "중급"
+    return {"morning": "초급", "noon": "중급", "evening": "고급"}.get(t.slot, "중급")
 
 
 _BASE_TAGS = ("#슬로우7", "#슬로우조깅", "#슬로우조깅챌린지", "#7분페이스")
@@ -71,6 +87,27 @@ EVENING: list[Topic] = [
 ]
 
 
+# 비교형 토픽 — 검색량 크고 체류시간 높음. 블로그 전용(slot=evening 색감).
+# blog_writer가 'vs' 또는 '비교' 감지 시 자동으로 비교표를 넣는다.
+COMPARISON: list[Topic] = [
+    Topic("c_vs_walking", "evening", "슬로우조깅 vs 걷기", "같은 시간 운동 시 칼로리·지방연소·관절부담 비교, 누구에게 뭐가 맞나", _BASE_TAGS + ("#걷기", "#유산소비교")),
+    Topic("c_vs_running", "evening", "슬로우조깅 vs 일반 달리기", "강도·부상위험·지속가능성·다이어트 효과 비교", _BASE_TAGS + ("#달리기", "#러닝비교")),
+    Topic("c_fasted_vs_fed", "evening", "공복 유산소 vs 식후 유산소", "각각의 지방연소 메커니즘과 추천 대상 비교", _BASE_TAGS + ("#공복유산소", "#다이어트")),
+    Topic("c_treadmill_vs_outdoor", "evening", "러닝머신 vs 야외 슬로우조깅", "에너지 소모·재미·관절부담·날씨 영향 비교", _BASE_TAGS + ("#러닝머신", "#야외운동")),
+    Topic("c_morning_vs_evening", "evening", "아침 운동 vs 저녁 운동", "시간대별 지방연소·수면·코티솔 차이와 추천", _BASE_TAGS + ("#아침운동", "#저녁운동")),
+    Topic("c_vs_cycling", "evening", "슬로우조깅 vs 자전거", "체중부하·칼로리·무릎부담·전신운동 효과 비교", _BASE_TAGS + ("#자전거", "#유산소비교")),
+    Topic("c_zone2_vs_hiit", "evening", "존2 vs 고강도(HIIT)", "지방연소·심폐·회복·초보 적합성 비교", _BASE_TAGS + ("#존2", "#HIIT")),
+    Topic("c_vs_swimming", "evening", "슬로우조깅 vs 수영", "관절부담·전신·접근성·다이어트 비교", _BASE_TAGS + ("#수영", "#유산소비교")),
+]
+
+# 루틴/플랜형 — 표로 주차별 계획 제시
+PLAN: list[Topic] = [
+    Topic("p_4week_beginner", "evening", "초보 4주 슬로우조깅 플랜", "1~4주차 시간·빈도·강도를 주차별 표로", _BASE_TAGS + ("#운동계획", "#초보러닝")),
+    Topic("p_diet_8week", "evening", "8주 다이어트 슬로우조깅 플랜", "체중감량 목표 주차별 루틴 표", _BASE_TAGS + ("#다이어트계획", "#체중감량")),
+    Topic("p_weekly_routine", "evening", "주간 슬로우조깅 루틴 짜기", "요일별 운동·휴식 배분 표", _BASE_TAGS + ("#주간루틴", "#운동습관")),
+]
+
+
 _ALL = {"morning": MORNING, "noon": NOON, "evening": EVENING}
 
 
@@ -109,4 +146,4 @@ def pick(
 
 
 def all_topics() -> list[Topic]:
-    return MORNING + NOON + EVENING
+    return MORNING + NOON + EVENING + COMPARISON + PLAN
