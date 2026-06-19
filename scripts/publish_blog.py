@@ -71,22 +71,29 @@ def main(topic_key: str | None = None) -> int:
             return 2
     else:
         # 블로그는 slot 구분 없이 전체 풀에서 성과 가중 선택
+        import random
         scores = db.topic_scores()
         all_pool = topics.all_topics()
         candidates = [t for t in all_pool if t.key not in exclude] or all_pool
-        # 성과 가중 (topics.pick은 slot용이라 직접 구현)
-        import random
+
+        # 최근 3개 글의 주제군을 피해서 같은 군 연달아 방지
+        recent_keys = db.recent_topic_keys(limit=3)
+        recent_clusters = {topics.topic_cluster(k) for k in recent_keys}
+        fresh = [t for t in candidates if topics.topic_cluster(t.key) not in recent_clusters]
+        pool = fresh if fresh else candidates  # 다 걸리면 원래 후보로
+
         if scores:
-            weights = [scores.get(t.key, 0) + 1.0 for t in candidates]
-            topic = random.choices(candidates, weights=weights, k=1)[0]
+            weights = [scores.get(t.key, 0) + 1.0 for t in pool]
+            topic = random.choices(pool, weights=weights, k=1)[0]
         else:
-            topic = random.choice(candidates)
+            topic = random.choice(pool)
 
     level = topics.topic_level(topic)
     print(f"[blog] 토픽: {topic.key} ({topic.title}) [난이도: {level}]")
 
-    # 글 생성
-    post = blog_writer.write_blog_post(topic, list(exclude)[:10])
+    # 글 생성 (최근 발행 제목을 줘서 내용 중복 방지)
+    recent_titles = db.recent_post_titles(limit=12)
+    post = blog_writer.write_blog_post(topic, recent_titles)
     print(f"[blog] 제목: {post['title']}")
     print(f"[blog] 슬러그: {post['slug']}")
     print(f"[blog] 메타: {post['meta_description']}")

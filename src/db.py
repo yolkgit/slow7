@@ -120,6 +120,17 @@ def recent_topic_keys(limit: int = 30) -> list[str]:
     return [r["topic_key"] for r in rows]
 
 
+def recent_post_titles(limit: int = 12) -> list[str]:
+    """최근 발행한 글 제목들 — 내용 차별화(중복 방지)에 사용."""
+    with conn() as c:
+        rows = c.execute(
+            "SELECT text FROM posts WHERE slot='blog' AND text IS NOT NULL "
+            "ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [r["text"] for r in rows if r["text"]]
+
+
 def has_replied(comment_id: str) -> bool:
     with conn() as c:
         row = c.execute(

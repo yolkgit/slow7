@@ -36,6 +36,29 @@ def topic_level(t: "Topic") -> str:
     return {"morning": "초급", "noon": "중급", "evening": "고급"}.get(t.slot, "중급")
 
 
+# 핵심 메시지가 겹치기 쉬운 주제군 — 같은 군이 연달아 안 나오게 회피용
+_CLUSTERS = {
+    "지방연소": ["fat", "mitochondria", "zone2", "science_fat", "insulin", "fasted", "post_meal"],
+    "시작동기": ["start", "3min", "streak", "mindset", "buddy", "age_proof"],
+    "자세폼": ["forefoot", "stride", "posture", "arm", "cadence"],
+    "호흡": ["breath", "talk_test", "no_breath"],
+    "회복": ["recovery", "sleep", "cooldown"],
+    "건강효과": ["cortisol", "bdnf", "blood_pressure", "longevity", "mental", "age_research", "vo2max"],
+    "장비": ["shoes", "water"],
+    "코스환경": ["hill", "route", "rainy", "warmup"],
+    "비교": ["c_"],
+    "플랜": ["p_"],
+}
+
+
+def topic_cluster(topic_key: str) -> str:
+    """토픽이 속한 주제군. 내용 중복 회피에 사용."""
+    for name, kws in _CLUSTERS.items():
+        if any(k in topic_key for k in kws):
+            return name
+    return topic_key  # 못 찾으면 자기 자신 (고유 취급)
+
+
 _BASE_TAGS = ("#슬로우7", "#슬로우조깅", "#슬로우조깅챌린지", "#7분페이스")
 
 

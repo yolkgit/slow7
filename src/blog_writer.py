@@ -102,8 +102,10 @@ USER_TEMPLATE = """[오늘의 블로그 글 작성 지시]
 - 풀어가는 각도: {angle}
 - 추천 키워드/태그 후보: {hashtags}
 
-[최근 다룬 주제 — 중복 금지]
-{recent_keys}
+[이미 발행한 최근 글 제목들 — 이 글들과 내용/예시/표현이 겹치면 안 됨]
+{recent_titles}
+→ 위 글들과 다른 각도, 다른 예시, 다른 소제목으로 써라. 같은 주제(예: 지방연소)라도
+   이미 다룬 내용 반복 금지. 이 글만의 고유한 정보·관점을 최소 한 가지 넣어라.
 
 [참고 경험담 — 주제에 맞는 게 있으면 1인칭으로 자연스럽게 녹이고, 없으면 보편적 표현 사용. 절대 지어내지 말 것]
 {experiences}
@@ -178,14 +180,15 @@ def _parse_meta_and_content(raw: str) -> tuple[dict, str]:
     return meta, content
 
 
-def write_blog_post(topic: Topic, recent_topic_keys: list[str]) -> dict:
-    """블로그 글 생성. {title, slug, meta_description, content_html, tags, card_*} 반환."""
+def write_blog_post(topic: Topic, recent_titles: list[str]) -> dict:
+    """블로그 글 생성. recent_titles: 최근 발행 제목들(중복 방지)."""
     client = Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    titles_str = "\n".join(f"- {t}" for t in recent_titles) if recent_titles else "(아직 없음)"
     user_msg = USER_TEMPLATE.format(
         title=topic.title,
         angle=topic.angle,
         hashtags=" ".join(topic.hashtags),
-        recent_keys=", ".join(recent_topic_keys) if recent_topic_keys else "(없음)",
+        recent_titles=titles_str,
         experiences=_load_experiences(),
     )
     msg = client.messages.create(

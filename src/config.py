@@ -48,6 +48,7 @@ DRY_RUN = _bool("DRY_RUN", False)
 BRAND_NAME = "슬로우7"
 BRAND_SLOGAN = "7분 페이스로 극강의 효율"
 LOGO_PATH = ROOT / "assets" / "logo.png"
+EXPERIENCES_PATH = ROOT / "assets" / "experiences.md"
 DB_PATH = ROOT / "slow7.db"
 MEDIA_DIR = ROOT / "posted_media"
 
