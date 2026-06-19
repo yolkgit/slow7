@@ -69,6 +69,9 @@ def main(topic_key: str | None = None) -> int:
         if not topic:
             print(f"토픽 키 못 찾음: {topic_key}")
             return 2
+        if topic_key in exclude:
+            print(f"⚠️  '{topic_key}'는 최근 발행한 토픽이야. 비슷한 글 중복 위험! "
+                  f"(그래도 진행 — 내용은 최근 제목과 차별화됨)")
     else:
         # 블로그는 slot 구분 없이 전체 풀에서 성과 가중 선택
         import random
