@@ -39,6 +39,28 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 # ===== Pexels (본문 이미지, 무료) =====
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 
+# ===== SNS 크로스포스팅 (블로그 유입용, 자동 게시만) =====
+# X (트위터) — developer.x.com 에서 발급
+X_API_KEY = os.getenv("X_API_KEY", "")
+X_API_SECRET = os.getenv("X_API_SECRET", "")
+X_ACCESS_TOKEN = os.getenv("X_ACCESS_TOKEN", "")
+X_ACCESS_SECRET = os.getenv("X_ACCESS_SECRET", "")
+
+# 페이스북 페이지 — Graph API
+FB_PAGE_ID = os.getenv("FB_PAGE_ID", "")
+FB_PAGE_TOKEN = os.getenv("FB_PAGE_TOKEN", "")
+
+# 스레드 (재도전 — 새 계정/앱). 자동 게시만.
+THREADS_PROMO_TOKEN = os.getenv("THREADS_PROMO_TOKEN", "")
+THREADS_PROMO_USER_ID = os.getenv("THREADS_PROMO_USER_ID", "")
+
+# 인스타그램 비즈니스 — Graph API (이미지 필수)
+IG_USER_ID = os.getenv("IG_USER_ID", "")
+IG_ACCESS_TOKEN = os.getenv("IG_ACCESS_TOKEN", "")
+
+# 어떤 플랫폼에 크로스포스팅할지 (쉼표구분: x,facebook,threads,instagram)
+SNS_PLATFORMS = os.getenv("SNS_PLATFORMS", "")
+
 ATTACH_CARD_IMAGE = _bool("ATTACH_CARD_IMAGE", True)
 AUTO_REPLY_ENABLED = _bool("AUTO_REPLY_ENABLED", True)
 # 검수 모드: true면 생성 후 draft+텔레그램 알림, 사용자 '발행' 응답 시 공개

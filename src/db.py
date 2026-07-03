@@ -63,6 +63,16 @@ CREATE TABLE IF NOT EXISTS kv (
     v TEXT
 );
 
+CREATE TABLE IF NOT EXISTS social_posts (
+    -- SNS 크로스포스팅 추적 (한 글을 같은 플랫폼에 중복 게시 방지)
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    wp_post_id TEXT NOT NULL,
+    platform TEXT NOT NULL,     -- x / facebook / threads / instagram
+    sns_post_id TEXT,
+    posted_at INTEGER NOT NULL,
+    UNIQUE(wp_post_id, platform)
+);
+
 CREATE INDEX IF NOT EXISTS idx_posts_topic ON posts(topic_key);
 CREATE INDEX IF NOT EXISTS idx_posts_slot ON posts(slot);
 CREATE INDEX IF NOT EXISTS idx_ext_user ON commented_external(target_username);
@@ -342,3 +352,58 @@ def kv_get(key: str, default: str | None = None) -> str | None:
 def kv_set(key: str, value: str) -> None:
     with conn() as c:
         c.execute("INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)", (key, value))
+
+
+# ---------- SNS 크로스포스팅 ----------
+
+def already_posted_social(wp_post_id: str, platform: str) -> bool:
+    with conn() as c:
+        row = c.execute(
+            "SELECT 1 FROM social_posts WHERE wp_post_id=? AND platform=?",
+            (wp_post_id, platform),
+        ).fetchone()
+    return row is not None
+
+
+def record_social_post(wp_post_id: str, platform: str, sns_post_id: str | None) -> None:
+    with conn() as c:
+        c.execute(
+            "INSERT OR IGNORE INTO social_posts (wp_post_id, platform, sns_post_id, posted_at) "
+            "VALUES (?, ?, ?, ?)",
+            (wp_post_id, platform, sns_post_id, int(time.time())),
+        )
+
+
+def published_posts_for_promo(limit: int = 20) -> list[dict]:
+    """SNS 홍보 대상 — 발행(published)된 블로그 글."""
+    with conn() as c:
+        rows = c.execute(
+            "SELECT wp_post_id, title, wp_link, content_html, topic_key FROM review_queue "
+            "WHERE status='published' AND wp_link IS NOT NULL "
+            "ORDER BY updated_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def find_related_published(cluster: str, topic_keys_in_cluster: list[str]) -> dict | None:
+    """주제군에 속한 발행 블로그 글 중 가장 최근 것 (SNS 링크용).
+
+    topic_keys_in_cluster: 그 주제군에 속하는 토픽 키 목록.
+    없으면 아무 발행글이나 최근 것 반환.
+    """
+    with conn() as c:
+        rows = c.execute(
+            "SELECT wp_post_id, title, wp_link, topic_key FROM review_queue "
+            "WHERE status='published' AND wp_link IS NOT NULL AND wp_link != '' "
+            "ORDER BY updated_at DESC LIMIT 50"
+        ).fetchall()
+    posts = [dict(r) for r in rows]
+    if not posts:
+        return None
+    # 같은 주제군 글 우선
+    for p in posts:
+        if p["topic_key"] in topic_keys_in_cluster:
+            return p
+    # 없으면 가장 최근 발행글
+    return posts[0]

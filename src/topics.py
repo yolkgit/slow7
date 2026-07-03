@@ -59,6 +59,11 @@ def topic_cluster(topic_key: str) -> str:
     return topic_key  # 못 찾으면 자기 자신 (고유 취급)
 
 
+def keys_in_cluster(cluster: str) -> list[str]:
+    """특정 주제군에 속하는 모든 토픽 키. SNS 관련 글 매칭용."""
+    return [t.key for t in all_topics() if topic_cluster(t.key) == cluster]
+
+
 _BASE_TAGS = ("#슬로우7", "#슬로우조깅", "#슬로우조깅챌린지", "#7분페이스")
 
 

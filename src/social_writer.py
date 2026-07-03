@@ -1,0 +1,80 @@
+"""블로그 글 → SNS 홍보글 생성.
+
+플랫폼별 길이·스타일에 맞춰 마모루 톤 홍보글 + 블로그 링크.
+목적: 클릭 유도해서 블로그로 유입.
+"""
+from __future__ import annotations
+
+import json
+import re
+
+from anthropic import Anthropic
+
+from . import config
+
+# 플랫폼별 글자수 제한 (링크·해시태그 여유 고려한 본문 목표)
+LIMITS = {
+    "x": 230,           # 280자 - 링크(약 23) - 여유
+    "facebook": 400,
+    "threads": 450,     # 500자 제한
+    "instagram": 300,
+}
+
+PROMO_SYSTEM = """너는 슬로우조깅 블로그 "슬로우7"의 SNS 홍보 담당이다.
+블로그 글 제목·요약을 받아서, SNS에 올릴 짧은 홍보글을 쓴다. 목적은 클릭 유도.
+
+[말투]
+- "더파이팅" 마모루 같은 활기찬 반말. 짧고 강하게.
+- 첫 줄에서 궁금증/공감 유발 (스크롤 멈추게)
+- "~다고!", "~잖아!", "가자!" 같은 어미
+- 이모지 1~2개 (🔥💪🏃⚡)
+
+[홍보글 구조]
+- 후킹 한 줄 (질문/통념깨기/충격)
+- 핵심 한 줄 (블로그에서 뭘 얻는지)
+- "자세한 건 아래 링크!" 같은 클릭 유도
+- 해시태그 3~5개 (링크·본문과 별도 줄)
+
+[금지]
+- 낚시성 과장 ("충격!", "이것만 하면 10kg") 금지
+- 존댓말 금지
+- 링크는 본문에 넣지 마라 (코드가 따로 붙임)
+
+[출력] 홍보글 본문만 출력. 링크는 넣지 말 것. 따옴표/JSON 없이 바로.
+"""
+
+
+def _clean(s: str) -> str:
+    s = s.strip()
+    s = re.sub(r"^```.*?\n", "", s)
+    s = re.sub(r"\n```$", "", s)
+    if (s.startswith('"') and s.endswith('"')):
+        s = s[1:-1]
+    return s.strip()
+
+
+def write_promo(title: str, summary: str, platform: str, blog_url: str) -> str:
+    """플랫폼용 홍보글 생성 → '본문\\n\\n링크' 형태로 반환."""
+    limit = LIMITS.get(platform, 300)
+    client = Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    user_msg = (
+        f"[블로그 글 제목]\n{title}\n\n"
+        f"[요약]\n{summary}\n\n"
+        f"[플랫폼]\n{platform} (본문 {limit}자 이내)\n\n"
+        f"{limit}자 이내로 홍보글 작성. 링크는 넣지 말고 본문만."
+    )
+    msg = client.messages.create(
+        model=config.ANTHROPIC_MODEL,
+        max_tokens=400,
+        temperature=1.0,
+        system=PROMO_SYSTEM,
+        messages=[{"role": "user", "content": user_msg}],
+    )
+    body = _clean("".join(b.text for b in msg.content if hasattr(b, "text")))
+    if len(body) > limit:
+        body = body[:limit].rsplit("\n", 1)[0]
+
+    # 인스타는 링크 클릭이 안 되므로 안내 문구
+    if platform == "instagram":
+        return f"{body}\n\n👉 프로필 링크에서 전체 글 보기\n{blog_url}"
+    return f"{body}\n\n{blog_url}"
