@@ -53,6 +53,52 @@ def _clean(s: str) -> str:
     return s.strip()
 
 
+NAVER_SYSTEM = """너는 슬로우조깅 블로그 "슬로우7"의 네이버 블로그 담당이다.
+워드프레스에 발행된 글을 받아서, 네이버 블로그에 올릴 "요약 버전"을 새로 쓴다.
+
+[가장 중요 — 중복 콘텐츠 방지]
+- 원문 문장을 그대로 복사하지 마라. 같은 내용이라도 완전히 새로운 문장으로 다시 써라.
+- 원문의 핵심 정보 중 2~3가지만 골라서 풀고, 나머지는 "전체 글에서" 라고 궁금증을 남겨라.
+
+[네이버 블로그 스타일]
+- 분량: 500~800자
+- 문단은 1~3문장씩 짧게 끊고, 문단 사이 빈 줄
+- 말투: 마모루 톤(활기찬 반말) 유지하되 네이버답게 살짝 부드럽게
+- 이모지 2~3개 적당히
+- 글 마지막에 "표/체크리스트가 포함된 전체 글은 아래 링크에서!" 같은 문장으로 마무리 (링크는 코드가 붙임)
+
+[출력 형식 — 정확히 이대로]
+제목: <네이버 검색 친화 제목 — 원문 제목과 다르게, 30자 이내>
+
+<본문>
+
+태그: #태그1 #태그2 #태그3 #태그4 #태그5
+
+다른 설명 없이 위 형식만 출력.
+"""
+
+
+def write_naver_summary(title: str, content_html: str, blog_url: str) -> str:
+    """네이버 블로그용 요약본 생성 (복붙용 완성 텍스트)."""
+    text = re.sub(r"<[^>]+>", " ", content_html or "")
+    text = re.sub(r"\s+", " ", text).strip()[:2500]
+    client = Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    user_msg = (
+        f"[원문 제목]\n{title}\n\n"
+        f"[원문 내용]\n{text}\n\n"
+        "위 글의 네이버 블로그용 요약 버전을 형식대로 작성해줘."
+    )
+    msg = client.messages.create(
+        model=config.ANTHROPIC_MODEL,
+        max_tokens=1200,
+        temperature=1.0,
+        system=NAVER_SYSTEM,
+        messages=[{"role": "user", "content": user_msg}],
+    )
+    body = _clean("".join(b.text for b in msg.content if hasattr(b, "text")))
+    return f"{body}\n\n👉 전체 글 보기: {blog_url}"
+
+
 def write_promo(title: str, summary: str, platform: str, blog_url: str) -> str:
     """플랫폼용 홍보글 생성 → '본문\\n\\n링크' 형태로 반환."""
     limit = LIMITS.get(platform, 300)

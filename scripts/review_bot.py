@@ -33,9 +33,30 @@ def _publish(review: dict) -> None:
         db.mark_review_status(wp_id, "published")
         telegram_client.send_message(f"✅ <b>발행 완료!</b>\n🔗 <a href=\"{link}\">{review['title']}</a>")
         print(f"[review] 발행: {wp_id}")
+        _send_naver_summary(review, link)
     except wordpress_client.WordPressError as e:
         telegram_client.send_message(f"❌ 발행 실패: {e}")
         print(f"[review] 발행 실패 {wp_id}: {e}")
+
+
+def _send_naver_summary(review: dict, link: str) -> None:
+    """발행 후 네이버 블로그용 요약본을 텔레그램으로 전송 (수동 복붙용)."""
+    import html as _html
+    try:
+        from src import social_writer
+        summary = social_writer.write_naver_summary(
+            review["title"], review.get("content_html", ""), link
+        )
+        msg = (
+            "📋 <b>네이버 블로그용 요약본</b>\n"
+            "(아래를 복사해서 네이버 블로그 앱에 붙여넣어)\n"
+            "━━━━━━━━━━\n\n"
+            f"{_html.escape(summary)}"
+        )
+        telegram_client.send_message(msg)
+        print("[review] 네이버 요약본 전송 완료")
+    except Exception as e:
+        print(f"[review] 네이버 요약본 실패(무시): {e}")
 
 
 def _skip(review: dict) -> None:
