@@ -25,3 +25,7 @@ local_media/
 store_ai/browser_profile/
 store_ai/downloads/
 store_ai/debug/
+
+# 서버 런타임 산출물 (git 제외)
+logs/
+posted_media/
