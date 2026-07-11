@@ -9,8 +9,7 @@ venv/
 *.db
 *.sqlite
 *.sqlite3
-# slow7.db 는 그로스/게시 이력 추적용이라 git에 포함 (예외)
-!slow7.db
+# slow7.db 는 서버가 라이브로 관리 — git 추적 금지 (pull/stash 충돌 방지)
 .DS_Store
 Thumbs.db
 # 생성된 카드뉴스는 posted_media 브랜치/디렉토리에 별도 관리
@@ -21,3 +20,8 @@ local_media/
 
 # ���� �޸� / ��ū ����
 *.txt
+
+# store_ai: 로그인 세션/다운로드 사진은 git 제외
+store_ai/browser_profile/
+store_ai/downloads/
+store_ai/debug/
