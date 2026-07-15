@@ -89,7 +89,7 @@ def write_naver_summary(title: str, content_html: str, blog_url: str) -> str:
         "위 글의 네이버 블로그용 요약 버전을 형식대로 작성해줘."
     )
     msg = client.messages.create(
-        model=config.ANTHROPIC_MODEL,
+        model=config.ANTHROPIC_MODEL_LIGHT,
         max_tokens=1200,
         temperature=1.0,
         system=NAVER_SYSTEM,
@@ -128,7 +128,7 @@ def write_promo(title: str, summary: str, platform: str, blog_url: str | None) -
         )
 
     msg = client.messages.create(
-        model=config.ANTHROPIC_MODEL,
+        model=config.ANTHROPIC_MODEL_LIGHT,
         max_tokens=400,
         temperature=1.0,
         system=PROMO_SYSTEM,

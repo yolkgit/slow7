@@ -20,7 +20,10 @@ def _bool(name: str, default: bool = False) -> bool:
 THREADS_ACCESS_TOKEN = os.getenv("THREADS_ACCESS_TOKEN", "")
 THREADS_USER_ID = os.getenv("THREADS_USER_ID", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+# 블로그 본문 등 품질이 중요한 긴 글 (서버에서 sonnet-4-6 사용 중)
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
+# SNS 홍보글·네이버 요약·답글 같은 짧고 빈번한 글 — 저렴한 모델로 (비용 최적화)
+ANTHROPIC_MODEL_LIGHT = os.getenv("ANTHROPIC_MODEL_LIGHT", "claude-haiku-4-5-20251001")
 
 GITHUB_REPO = os.getenv("GITHUB_REPO", "")
 GITHUB_BRANCH = os.getenv("GITHUB_BRANCH", "main")
