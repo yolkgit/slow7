@@ -108,7 +108,7 @@ def main(topic_key: str | None = None) -> int:
             sns_id = social.post_to(platform, promo)
             posted += 1
             print(f"[sns] ✅ {platform} 게시 (id={sns_id})")
-            if threads_link_used:
+            if threads_link_used and not config.DRY_RUN:
                 db.kv_set("threads_link_date", today_str)
         except Exception as e:
             print(f"[sns] ❌ {platform} 실패: {e}")
