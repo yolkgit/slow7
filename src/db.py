@@ -386,6 +386,22 @@ def published_posts_for_promo(limit: int = 20) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def published_post_today() -> dict | None:
+    """오늘(서버 로컬 기준) 발행된 블로그 글 중 가장 최근 것 — 스레드 '새 글 소개' 1회용."""
+    import datetime
+    now = datetime.datetime.now()
+    day_start = int(datetime.datetime(now.year, now.month, now.day).timestamp())
+    with conn() as c:
+        row = c.execute(
+            "SELECT wp_post_id, title, wp_link, content_html FROM review_queue "
+            "WHERE status='published' AND updated_at >= ? "
+            "AND wp_link IS NOT NULL AND wp_link != '' "
+            "ORDER BY updated_at DESC LIMIT 1",
+            (day_start,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def find_related_published(cluster: str, topic_keys_in_cluster: list[str]) -> dict | None:
     """주제군에 속한 발행 블로그 글 중 가장 최근 것 (SNS 링크용).
 

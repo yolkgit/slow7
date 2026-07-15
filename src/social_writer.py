@@ -99,16 +99,34 @@ def write_naver_summary(title: str, content_html: str, blog_url: str) -> str:
     return f"{body}\n\n👉 전체 글 보기: {blog_url}"
 
 
-def write_promo(title: str, summary: str, platform: str, blog_url: str) -> str:
-    """플랫폼용 홍보글 생성 → '본문\\n\\n링크' 형태로 반환."""
+def write_promo(title: str, summary: str, platform: str, blog_url: str | None) -> str:
+    """플랫폼용 글 생성.
+
+    blog_url 있으면: 클릭 유도 홍보글 + 링크 첨부
+    blog_url 없으면: 링크 없는 순수 정보 글 (자연스러운 계정 운영용)
+    """
     limit = LIMITS.get(platform, 300)
     client = Anthropic(api_key=config.ANTHROPIC_API_KEY)
-    user_msg = (
-        f"[블로그 글 제목]\n{title}\n\n"
-        f"[요약]\n{summary}\n\n"
-        f"[플랫폼]\n{platform} (본문 {limit}자 이내)\n\n"
-        f"{limit}자 이내로 홍보글 작성. 링크는 넣지 말고 본문만."
-    )
+
+    if blog_url:
+        user_msg = (
+            f"[블로그 글 제목]\n{title}\n\n"
+            f"[요약]\n{summary}\n\n"
+            f"[플랫폼]\n{platform} (본문 {limit}자 이내)\n\n"
+            f"{limit}자 이내로 홍보글 작성. 링크는 넣지 말고 본문만."
+        )
+    else:
+        user_msg = (
+            f"[주제]\n{title}\n\n"
+            f"[핵심 내용]\n{summary}\n\n"
+            f"[플랫폼]\n{platform} (본문 {limit}자 이내)\n\n"
+            "⚠️ 이번 글에는 링크가 없다. 규칙:\n"
+            "- '링크', '블로그', '자세한 건 아래' 같은 표현 절대 금지\n"
+            "- 글 자체로 완결된 꿀팁 — 읽고 바로 써먹을 수 있게 핵심을 다 담아라\n"
+            "- 마지막 줄은 가벼운 참여 유도 (질문이나 '오늘 해보자!' 같은 실천 제안)\n"
+            f"{limit}자 이내로 본문만 출력."
+        )
+
     msg = client.messages.create(
         model=config.ANTHROPIC_MODEL,
         max_tokens=400,
@@ -119,6 +137,9 @@ def write_promo(title: str, summary: str, platform: str, blog_url: str) -> str:
     body = _clean("".join(b.text for b in msg.content if hasattr(b, "text")))
     if len(body) > limit:
         body = body[:limit].rsplit("\n", 1)[0]
+
+    if not blog_url:
+        return body
 
     # 인스타는 링크 클릭이 안 되므로 안내 문구
     if platform == "instagram":

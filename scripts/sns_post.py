@@ -35,6 +35,13 @@ def _push_sns_topic(key: str, keep: int = 15) -> None:
     db.kv_set(SNS_RECENT_KEY, ",".join(recent[-keep:]))
 
 
+def _strip_html(html: str, limit: int = 200) -> str:
+    import re
+    text = re.sub(r"<[^>]+>", " ", html or "")
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:limit]
+
+
 def _pick_topic(topic_key: str | None):
     all_t = topics.all_topics()
     if topic_key:
@@ -61,7 +68,7 @@ def main(topic_key: str | None = None) -> int:
         return 2
     print(f"[sns] 토픽: {topic.key} ({topic.title}) | 플랫폼: {platforms}")
 
-    # 관련 블로그 글 찾기 (같은 주제군 우선)
+    # 관련 블로그 글 찾기 (같은 주제군 우선) — 페이스북 등 링크 항상 거는 플랫폼용
     cluster = topics.topic_cluster(topic.key)
     cluster_keys = topics.keys_in_cluster(cluster)
     related = db.find_related_published(cluster, cluster_keys)
@@ -72,14 +79,37 @@ def main(topic_key: str | None = None) -> int:
         blog_url = config.WP_SITE_URL or ""
         print(f"[sns] 관련 발행글 없음 → 메인 링크 사용: {blog_url}")
 
+    # 스레드 링크 정책: 평소엔 링크 없는 순수 정보 글,
+    # 블로그를 발행한 날만 하루 1회 '새 글 소개'로 링크 (상업 계정처럼 안 보이게)
+    today_str = time.strftime("%Y-%m-%d")
+    todays_post = db.published_post_today()
+    threads_linked_today = db.kv_get("threads_link_date") == today_str
+
     posted = 0
     for platform in platforms:
+        threads_link_used = False
         try:
-            promo = social_writer.write_promo(topic.title, topic.angle, platform, blog_url)
+            if platform == "threads":
+                if todays_post and not threads_linked_today:
+                    # 오늘 발행한 새 글을 소개 (하루 1회)
+                    summary = _strip_html(todays_post.get("content_html", ""))
+                    promo = social_writer.write_promo(
+                        todays_post["title"], summary, platform, todays_post["wp_link"]
+                    )
+                    threads_link_used = True
+                    print("[sns] threads: 오늘 새 글 소개 (링크 1회)")
+                else:
+                    promo = social_writer.write_promo(topic.title, topic.angle, platform, None)
+                    print("[sns] threads: 링크 없는 정보 글")
+            else:
+                promo = social_writer.write_promo(topic.title, topic.angle, platform, blog_url)
+
             print(f"\n[sns] {platform} 글:\n{promo}\n")
             sns_id = social.post_to(platform, promo)
             posted += 1
             print(f"[sns] ✅ {platform} 게시 (id={sns_id})")
+            if threads_link_used:
+                db.kv_set("threads_link_date", today_str)
         except Exception as e:
             print(f"[sns] ❌ {platform} 실패: {e}")
         if not config.DRY_RUN and platform != platforms[-1]:
