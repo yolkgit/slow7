@@ -54,6 +54,44 @@ def _build_related_links_html(exclude_wp_id: str | None) -> str:
     return f"<h2>함께 읽으면 좋은 글</h2>\n<ul>{items}</ul>"
 
 
+def _build_series_html(topic) -> str:
+    """연재 편이면 진행 상황 + 다음 편 예고 블록.
+
+    '다음 편이 언제 나오는지'를 명시해야 재방문할 이유가 생긴다.
+    (월·수·금 발행이므로 다음 발행일을 계산해 함께 적는다)
+    """
+    pos = topics.series_position(topic.key)
+    if not pos:
+        return ""
+    n, total = pos
+    nxt = topics.series_next_of(topic.key)
+
+    head = (
+        f'<p style="margin:0 0 8px;font-size:.9rem;color:#8a6a4a">'
+        f'📚 <strong>{topics.SERIES_TITLE}</strong> · {n}편 / 총 {total}편</p>'
+    )
+    if not nxt:
+        tail = (
+            '<p style="margin:0;font-size:.92rem">이걸로 4주 프로그램은 끝! '
+            '여기까지 왔으면 진짜 대단한 거다. 이제 네 페이스로 계속 가면 돼.</p>'
+        )
+    else:
+        from datetime import date, timedelta
+        d = date.today()
+        for _ in range(1, 8):  # 다음 발행일(월·수·금) 찾기
+            d += timedelta(days=1)
+            if d.weekday() in (0, 2, 4):
+                break
+        tail = (
+            f'<p style="margin:0;font-size:.92rem">👉 <strong>다음 편</strong> '
+            f'({d.month}/{d.day} 발행): {nxt.title.split("] ")[-1]}</p>'
+        )
+    return (
+        '<div style="margin:28px 0;padding:16px 18px;border-radius:12px;'
+        'background:#fff3e8;border:1px solid #f3d3b6">' + head + tail + '</div>'
+    )
+
+
 def main(topic_key: str | None = None) -> int:
     missing = config.validate_wp(require_claude=True)
     if missing:
@@ -72,6 +110,12 @@ def main(topic_key: str | None = None) -> int:
         if topic_key in exclude:
             print(f"⚠️  '{topic_key}'는 최근 발행한 토픽이야. 비슷한 글 중복 위험! "
                   f"(그래도 진행 — 내용은 최근 제목과 차별화됨)")
+    elif (series_topic := topics.next_series_topic(set(db.recent_topic_keys(limit=1000)))):
+        # 연재가 진행 중이면 다음 편을 우선한다.
+        # 순서가 어긋나면 "다음 편"을 기다릴 이유가 사라지므로 성과 가중보다 앞선다.
+        topic = series_topic
+        pos = topics.series_position(topic.key)
+        print(f"[blog] 연재 진행: {topics.SERIES_TITLE} {pos[0]}/{pos[1]}편")
     else:
         # 블로그는 slot 구분 없이 전체 풀에서 성과 가중 선택
         import random
@@ -126,6 +170,12 @@ def main(topic_key: str | None = None) -> int:
             print("[blog] Pexels 미설정/결과없음 → 본문 이미지 생략")
     except Exception as e:
         print(f"[blog] 본문 이미지 실패(무시): {e}")
+
+    # 연재 진행 상황 + 다음 편 예고 (본문 맨 앞 — 시리즈임을 바로 알려야 한다)
+    series_html = _build_series_html(topic)
+    if series_html:
+        post["content_html"] = series_html + "\n" + post["content_html"]
+        print("[blog] 연재 안내 삽입")
 
     # 내부 링크 (발행된 글 → '함께 읽으면 좋은 글')
     related = _build_related_links_html(exclude_wp_id=None)

@@ -174,4 +174,79 @@ def pick(
 
 
 def all_topics() -> list[Topic]:
-    return MORNING + NOON + EVENING + COMPARISON + PLAN
+    return MORNING + NOON + EVENING + COMPARISON + PLAN + SERIES
+
+
+# ======================================================================
+# 연재 시리즈
+# ----------------------------------------------------------------------
+# 개별 토픽은 무작위로 뽑히니 독자가 "다음 글"을 기다릴 이유가 없다.
+# 시리즈는 순서가 정해져 있어 "다음 편"을 기다리게 만드는 게 목적이다.
+# 월·수·금 발행이므로 12편이면 정확히 4주 분량이다.
+# ======================================================================
+
+SERIES_KEY = "s1"
+SERIES_TITLE = "슬로우조깅 4주 완성"
+
+SERIES: list[Topic] = [
+    Topic("s1_01", "morning", "[1주차 ①] 슬로우조깅이 뭔지부터",
+          "왜 느리게 뛰는 게 더 효과적인지 원리부터. 첫 주 목표는 '완주'가 아니라 '나가기'",
+          _BASE_TAGS + ("#슬로우조깅4주", "#1주차"), level="초급"),
+    Topic("s1_02", "morning", "[1주차 ②] 첫 달리기 20분 해보기",
+          "니코니코 페이스 잡는 법. 숨차면 이미 빠른 거다. 20분을 걷기 섞어 채우는 법",
+          _BASE_TAGS + ("#슬로우조깅4주", "#1주차"), level="초급"),
+    Topic("s1_03", "morning", "[1주차 ③] 첫 주 마무리 점검",
+          "3회 다 했는지 체크. 종아리·무릎 통증 유무로 강도 재조정하는 기준",
+          _BASE_TAGS + ("#슬로우조깅4주", "#1주차"), level="초급"),
+    Topic("s1_04", "noon", "[2주차 ①] 30분으로 늘리기",
+          "20분에서 30분으로 넘어가는 안전한 증량폭. 10% 규칙 적용법",
+          _BASE_TAGS + ("#슬로우조깅4주", "#2주차"), level="초급"),
+    Topic("s1_05", "noon", "[2주차 ②] 착지와 자세 교정",
+          "포어풋 착지·보폭·상체 각도. 2주차에 자세를 잡아야 부상이 안 온다",
+          _BASE_TAGS + ("#슬로우조깅4주", "#2주차"), level="중급"),
+    Topic("s1_06", "noon", "[2주차 ③] 지루함 넘기기",
+          "느린 페이스가 심심할 때 쓰는 방법들. 코스 바꾸기·팟캐스트·구간 나누기",
+          _BASE_TAGS + ("#슬로우조깅4주", "#2주차"), level="초급"),
+    Topic("s1_07", "noon", "[3주차 ①] 주 4회로 늘려도 될까",
+          "빈도를 늘릴지 시간을 늘릴지 판단 기준. 회복이 안 되면 늘리지 마라",
+          _BASE_TAGS + ("#슬로우조깅4주", "#3주차"), level="중급"),
+    Topic("s1_08", "noon", "[3주차 ②] 체중이 안 빠질 때",
+          "3주차 정체기의 실제 원인. 먹는 양·수면·근육량 증가 관점에서",
+          _BASE_TAGS + ("#슬로우조깅4주", "#3주차"), level="중급"),
+    Topic("s1_09", "evening", "[3주차 ③] 비 오는 날·추운 날",
+          "날씨 때문에 끊기는 게 제일 흔한 실패 원인. 실내 대체 루틴",
+          _BASE_TAGS + ("#슬로우조깅4주", "#3주차"), level="중급"),
+    Topic("s1_10", "evening", "[4주차 ①] 40분 도전",
+          "4주차 목표 시간. 지치지 않고 40분을 채우는 페이스 배분",
+          _BASE_TAGS + ("#슬로우조깅4주", "#4주차"), level="중급"),
+    Topic("s1_11", "evening", "[4주차 ②] 4주 전후 변화 점검",
+          "체중·안정시 심박·회복 속도·기분. 숫자로 확인하는 변화",
+          _BASE_TAGS + ("#슬로우조깅4주", "#4주차"), level="중급"),
+    Topic("s1_12", "evening", "[4주차 ③] 4주 후 어떻게 이어갈까",
+          "프로그램 종료 후 유지 루틴. 다음 목표 설정법과 흔한 이탈 시점",
+          _BASE_TAGS + ("#슬로우조깅4주", "#4주차"), level="중급"),
+]
+
+
+def next_series_topic(posted_keys: set[str]) -> Topic | None:
+    """아직 안 나간 시리즈 편 중 가장 앞 편. 완결됐으면 None."""
+    for t in SERIES:
+        if t.key not in posted_keys:
+            return t
+    return None
+
+
+def series_position(key: str) -> tuple[int, int] | None:
+    """(현재 편 번호, 전체 편수). 시리즈 토픽이 아니면 None."""
+    for i, t in enumerate(SERIES, start=1):
+        if t.key == key:
+            return i, len(SERIES)
+    return None
+
+
+def series_next_of(key: str) -> Topic | None:
+    """이 편의 바로 다음 편(예고용). 마지막 편이면 None."""
+    pos = series_position(key)
+    if not pos or pos[0] >= len(SERIES):
+        return None
+    return SERIES[pos[0]]
