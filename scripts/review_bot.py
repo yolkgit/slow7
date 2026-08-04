@@ -33,10 +33,26 @@ def _publish(review: dict) -> None:
         db.mark_review_status(wp_id, "published")
         telegram_client.send_message(f"✅ <b>발행 완료!</b>\n🔗 <a href=\"{link}\">{review['title']}</a>")
         print(f"[review] 발행: {wp_id}")
+        _send_push(review, link)
         _send_naver_summary(review, link)
     except wordpress_client.WordPressError as e:
         telegram_client.send_message(f"❌ 발행 실패: {e}")
         print(f"[review] 발행 실패 {wp_id}: {e}")
+
+
+def _send_push(review: dict, link: str) -> None:
+    """새 글 웹 푸시 발송. 실패해도 발행 흐름을 막지 않는다."""
+    try:
+        from src import webpush
+
+        result = webpush.send_new_post(title=review["title"], url=link)
+        if result["sent"]:
+            telegram_client.send_message(
+                f"🔔 푸시 발송 {result['sent']}명"
+                + (f" (실패 {result['failed']})" if result["failed"] else "")
+            )
+    except Exception as e:
+        print(f"[review] 푸시 발송 실패(무시): {e}")
 
 
 def _send_naver_summary(review: dict, link: str) -> None:
