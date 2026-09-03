@@ -24,12 +24,18 @@ from src import config, db, social, social_writer, topics
 SNS_RECENT_KEY = "sns_recent_topics"
 
 
-def _recent_sns_topics(limit: int = 15) -> list[str]:
+# 하루 3회 게시하므로 창이 15면 5일이면 같은 토픽이 돌아온다.
+# 실제로 n_talk_test 가 8/28 → 9/2 로 정확히 5일 만에 재등장했다.
+# 연재 제외 후 풀이 49개이므로 30이면 후보가 19개 남아 고갈되지 않는다.
+SNS_RECENT_WINDOW = 30
+
+
+def _recent_sns_topics(limit: int = SNS_RECENT_WINDOW) -> list[str]:
     raw = db.kv_get(SNS_RECENT_KEY, "") or ""
     return [k for k in raw.split(",") if k][-limit:]
 
 
-def _push_sns_topic(key: str, keep: int = 15) -> None:
+def _push_sns_topic(key: str, keep: int = SNS_RECENT_WINDOW) -> None:
     recent = _recent_sns_topics(limit=keep)
     recent.append(key)
     db.kv_set(SNS_RECENT_KEY, ",".join(recent[-keep:]))
@@ -43,10 +49,11 @@ def _strip_html(html: str, limit: int = 200) -> str:
 
 
 def _pick_topic(topic_key: str | None):
-    all_t = topics.all_topics()
+    all_t = topics.sns_topics()
     if topic_key:
-        return next((t for t in all_t if t.key == topic_key), None)
-    exclude = set(_recent_sns_topics(limit=15))
+        # 수동 지정은 연재 편도 허용한다
+        return next((t for t in topics.all_topics() if t.key == topic_key), None)
+    exclude = set(_recent_sns_topics(limit=SNS_RECENT_WINDOW))
     candidates = [t for t in all_t if t.key not in exclude] or all_t
     return random.choice(candidates)
 
