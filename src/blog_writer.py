@@ -10,7 +10,7 @@ import re
 
 from anthropic import Anthropic
 
-from . import config
+from . import config, quality
 from .topics import Topic
 
 
@@ -26,7 +26,7 @@ BLOG_SYSTEM = """너는 슬로우조깅 정보 블로그 "슬로우7"의 메인 
 - 정보는 충실하게 담되, 말투는 끝까지 마모루를 유지한다. (정보 전달한다고 차분해지지 마라!)
 - 모든 문단에 반말 어미가 살아있어야 한다. 특히 글 후반부로 갈수록 차분해지는 것 절대 금지.
 - 자주 쓰는 어미: "~다고!", "~잖아!", "~라구!", "~지!", "~봐!", "~야!", "가자!", "오케이!", "거든!"
-- 권투/스포츠 비유 자연스럽게 (한 글에 1~2번): "한 방", "녹다운", "잽 날리듯", "링 위", "라운드"
+- 권투/스포츠 비유는 한 글에 최대 1번, 최근 글에서 쓴 비유("잽 날리듯", "녹다운" 등)는 반복하지 말 것
 - 독자를 끌어당기는 코치 톤. 옆에서 같이 뛰자고 부추기는 형/누나처럼.
 
 [절대 금지 — 톤 무너지는 신호들]
@@ -35,10 +35,10 @@ BLOG_SYSTEM = """너는 슬로우조깅 정보 블로그 "슬로우7"의 메인 
 - 백과사전 같은 객관적 서술 금지 → 항상 독자에게 말 거는 느낌
 
 [좋은 마모루 톤 예시 — 이 느낌을 글 전체에 유지하라]
-- 도입: "야! 천천히 뛰는 게 더 살 빠진다는 거 알아? 진짜라고! 🔥"
+- 도입: "야! 천천히 뛰는 게 더 살 빠진다는 거 알아? 진짜라고!"
 - 설명: "심박수가 최대의 60~70%일 때, 그때 지방이 주 연료가 되거든. 숨차게 뛰면 오히려 탄수화물부터 태워버린다고!"
 - 소제목: "왜 느려야 오래 가는가?" / "이것만 지키면 무릎 안 아프다고!"
-- 마무리: "오늘부터 7분 페이스로 가보자! 첫 발만 떼면 그 다음은 자동이라고. 넌 할 수 있어! 💪"
+- 마무리: "오늘부터 7분 페이스로 가보자. 첫 발만 떼면 그 다음은 자동이라고."
 
 [독자]
 - 30~50대 다이어터, 초보 러너, 무릎 약한 사람, 건강 관리족
@@ -75,7 +75,9 @@ BLOG_SYSTEM = """너는 슬로우조깅 정보 블로그 "슬로우7"의 메인 
 - 존댓말 (반말 유지)
 - AI/ChatGPT/Claude 언급
 - 거짓 정보, 과장된 효능, 없는 연구 인용 (가짜 출처 절대 금지)
-- 외부 링크나 광고 문구 (제휴는 나중에 사람이 직접 삽입)
+- 광고 문구 (제휴는 나중에 사람이 직접 삽입). 외부 링크는 아래 품질 규칙의 출처·인용에만 쓴다
+
+""" + quality.QUALITY_RULES + """
 
 [출력 형식 — 정확히 이 형식으로]
 먼저 메타데이터를 JSON으로 출력하고, 그 다음 줄에 ===CONTENT=== 구분선,
@@ -119,7 +121,12 @@ def _load_experiences() -> str:
     try:
         if not config.EXPERIENCES_PATH.exists():
             return "(없음)"
-        lines = config.EXPERIENCES_PATH.read_text(encoding="utf-8").splitlines()
+        text = config.EXPERIENCES_PATH.read_text(encoding="utf-8")
+        # 템플릿의 예시 문장이 그대로 남아 있으면 쓰지 않는다. 예시를 1인칭으로 녹이면
+        # 겪지 않은 경험을 지어낸 글이 된다. 본인 경험으로 바꾸고 이 안내 줄을 지우면 켜진다.
+        if "예시는 참고용" in text:
+            return "(없음)"
+        lines = text.splitlines()
         items = [ln.strip() for ln in lines if ln.strip().startswith("- ")]
         return "\n".join(items) if items else "(없음)"
     except Exception:
@@ -182,7 +189,6 @@ def _parse_meta_and_content(raw: str) -> tuple[dict, str]:
 
 def write_blog_post(topic: Topic, recent_titles: list[str]) -> dict:
     """블로그 글 생성. recent_titles: 최근 발행 제목들(중복 방지)."""
-    client = Anthropic(api_key=config.ANTHROPIC_API_KEY)
     titles_str = "\n".join(f"- {t}" for t in recent_titles) if recent_titles else "(아직 없음)"
     user_msg = USER_TEMPLATE.format(
         title=topic.title,
@@ -191,15 +197,21 @@ def write_blog_post(topic: Topic, recent_titles: list[str]) -> dict:
         recent_titles=titles_str,
         experiences=_load_experiences(),
     )
-    msg = client.messages.create(
-        model=config.ANTHROPIC_MODEL,
-        max_tokens=3500,
-        temperature=1.0,  # 톤이 더 생생하게 살아나도록
-        system=BLOG_SYSTEM,
-        messages=[{"role": "user", "content": user_msg}],
-    )
-    raw = "".join(b.text for b in msg.content if hasattr(b, "text"))
-    data, content_html = _parse_meta_and_content(raw)
+    # web_search 로 출처를 찾게 하고, 본문 링크가 검색 결과에 실제로 있던 주소인지 확인한다.
+    # 지어낸 링크가 나오면 한 번 다시 쓰게 하고, 그래도 안 되면 발행하지 않는다.
+    for attempt in range(2):
+        raw, verified = quality.generate_with_search(BLOG_SYSTEM, user_msg)
+        data, content_html = _parse_meta_and_content(raw)
+        bad = quality.bad_links(content_html, verified)
+        if not bad:
+            break
+        print(f"[quality] 검증 실패 링크 {len(bad)}개 — 다시 작성: {bad}")
+        user_msg += (
+            "\n\n[이전 시도에서 거절된 링크 — 검색 결과에 없거나 열리지 않음. 다시는 쓰지 마라]\n"
+            + "\n".join(f"- {b}" for b in bad)
+        )
+    else:
+        raise ValueError(f"출처 링크 검증 실패: {bad}")
     data["content_html"] = content_html
 
     # 필수 필드 검증 + 폴백
@@ -260,3 +272,59 @@ def revise_blog_post(current_title: str, current_html: str, instruction: str) ->
     if not content_html.strip():
         content_html = current_html
     return {"title": title, "content_html": content_html}
+
+
+QUALITY_REVISE_SYSTEM = """너는 슬로우조깅 블로그 "슬로우7"의 편집자다.
+이미 발행된 글을 아래 품질 규칙에 맞게 고친다. 주제·구성·핵심 내용은 유지하고, 규칙에 어긋나는 부분만 손본다.
+
+[유지할 것]
+- 반말 코치 톤 자체는 유지하되, 품질 규칙 5번에 맞게 반복과 과장을 줄인다
+- HTML 구조(<h2>, <p>, <ul>, <table>), 모든 <img>/<figure> 블록, "함께 읽으면 좋은 글" 목록,
+  연재 안내 블록, 맨 아래 면책 문구(※ 로 시작하는 작은 글씨)는 글자 하나 바꾸지 말고 그대로 둔다
+- 내부 링크(soritok.com)는 그대로 둔다
+
+[고칠 것]
+- 1인칭 경험담("나도 ~했거든" 등)은 실제 근거가 없으므로 삭제하거나, 검색으로 찾은 다른 러너의 후기 인용으로 바꾼다
+- 출처 없는 수치·연구 주장은 검색으로 확인해 출처를 달거나, 확인되지 않으면 삭제·완화한다
+- 의료 행위(약 복용 등)를 암시하는 문장은 고친다
+- 본문 끝, 면책 문구와 "함께 읽으면 좋은 글" 앞에 <h2>참고 자료</h2> 를 넣는다
+
+""" + quality.QUALITY_RULES + """
+
+[출력 형식 — 정확히 이 형식으로]
+먼저 제목을 JSON으로, 그 다음 ===CONTENT=== 구분선, 그 아래 본문 HTML 전체.
+
+{
+  "title": "<제목. 의료 과장이 없으면 원래 제목 그대로>"
+}
+===CONTENT===
+<수정된 본문 HTML 전체>
+
+위 형식 외의 설명은 출력하지 마라.
+"""
+
+
+def revise_for_quality(current_title: str, current_html: str) -> dict:
+    """발행된 글을 품질 규칙에 맞게 고친다. 링크 검증까지 통과한 결과만 반환.
+
+    반환: {title, content_html}. 검증 실패 시 ValueError.
+    """
+    user_msg = (
+        f"[기존 제목]\n{current_title}\n\n"
+        f"[기존 본문 HTML]\n{current_html}\n\n"
+        "품질 규칙대로 고쳐서 위 형식으로 출력."
+    )
+    for attempt in range(2):
+        raw, verified = quality.generate_with_search(QUALITY_REVISE_SYSTEM, user_msg, max_tokens=12000)
+        data, content_html = _parse_meta_and_content(raw)
+        if not content_html.strip():
+            raise ValueError("수정 결과 본문이 비어 있음")
+        bad = quality.bad_links(content_html, verified)
+        if not bad:
+            return {"title": data.get("title") or current_title, "content_html": content_html}
+        print(f"[quality] 검증 실패 링크 {len(bad)}개 — 다시 작성: {bad}")
+        user_msg += (
+            "\n\n[이전 시도에서 거절된 링크 — 검색 결과에 없거나 열리지 않음. 다시는 쓰지 마라]\n"
+            + "\n".join(f"- {b}" for b in bad)
+        )
+    raise ValueError(f"출처 링크 검증 실패: {bad}")
