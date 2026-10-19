@@ -281,10 +281,11 @@ QUALITY_REVISE_SYSTEM = """너는 슬로우조깅 블로그 "슬로우7"의 편�
 - 반말 코치 톤 자체는 유지하되, 품질 규칙 5번에 맞게 반복과 과장을 줄인다
 - HTML 구조(<h2>, <p>, <ul>, <table>), 모든 <img>/<figure> 블록, "함께 읽으면 좋은 글" 목록,
   연재 안내 블록, 맨 아래 면책 문구(※ 로 시작하는 작은 글씨)는 글자 하나 바꾸지 말고 그대로 둔다
-- 내부 링크(soritok.com)는 그대로 둔다
+- 내부 링크(soritok.com)와 사진 출처 표기 링크(Pexels·Unsplash 등)는 그대로 둔다
 
 [고칠 것]
-- 1인칭 경험담("나도 ~했거든" 등)은 실제 근거가 없으므로 삭제하거나, 검색으로 찾은 다른 러너의 후기 인용으로 바꾼다
+- 1인칭 경험담("나도 ~했거든" 등)은 [운영자 실제 경험]에 있는 내용과 맞으면 남기고(필요하면 그 경험으로 다듬고),
+  없는 내용이면 삭제하거나 검색으로 찾은 다른 러너의 후기 인용으로 바꾼다
 - 출처 없는 수치·연구 주장은 검색으로 확인해 출처를 달거나, 확인되지 않으면 삭제·완화한다
 - 의료 행위(약 복용 등)를 암시하는 문장은 고친다
 - 본문 끝, 면책 문구와 "함께 읽으면 좋은 글" 앞에 <h2>참고 자료</h2> 를 넣는다
@@ -312,10 +313,14 @@ def revise_for_quality(current_title: str, current_html: str) -> dict:
     user_msg = (
         f"[기존 제목]\n{current_title}\n\n"
         f"[기존 본문 HTML]\n{current_html}\n\n"
+        f"[운영자 실제 경험 — 1인칭으로 써도 되는 유일한 내용]\n{_load_experiences()}\n\n"
         "품질 규칙대로 고쳐서 위 형식으로 출력."
     )
+    # 원래 글에 있던 링크(사진 출처 등)는 검색 결과가 아니어도 그대로 둘 수 있다
+    original = {quality._norm(u) for u in quality.external_links(current_html)}
     for attempt in range(2):
         raw, verified = quality.generate_with_search(QUALITY_REVISE_SYSTEM, user_msg, max_tokens=12000)
+        verified |= original
         data, content_html = _parse_meta_and_content(raw)
         if not content_html.strip():
             raise ValueError("수정 결과 본문이 비어 있음")
