@@ -188,6 +188,28 @@ def update_post(
     return _req("POST", f"posts/{post_id}", json=payload)
 
 
+def list_posts_raw(status: str = "publish", per_page: int = 100) -> list[dict]:
+    """수정용으로 글 목록을 원문(raw)과 함께 가져온다. 전체 페이지를 돈다."""
+    out: list[dict] = []
+    page = 1
+    while True:
+        resp = requests.get(
+            _api("posts"), auth=_auth(), timeout=30,
+            params={"status": status, "per_page": per_page, "page": page, "context": "edit",
+                    "_fields": "id,slug,link,title,content"},
+        )
+        if resp.status_code == 400 and page > 1:  # 마지막 페이지 다음
+            break
+        if resp.status_code >= 400:
+            raise WordPressError(f"GET posts -> {resp.status_code}: {resp.text[:300]}")
+        items = resp.json()
+        out.extend(items)
+        if page >= int(resp.headers.get("X-WP-TotalPages", "1")):
+            break
+        page += 1
+    return out
+
+
 def whoami() -> dict:
     """인증 확인용 — 현재 사용자 정보."""
     url = f"{config.WP_SITE_URL}/wp-json/wp/v2/users/me"
