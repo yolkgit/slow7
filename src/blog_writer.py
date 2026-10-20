@@ -116,18 +116,32 @@ USER_TEMPLATE = """[오늘의 블로그 글 작성 지시]
 """
 
 
+# assets/experiences.md 템플릿에 들어 있던 예시 문장
+_TEMPLATE_EXAMPLES = {
+    "- 처음 슬로우조깅 시작했을 때 3분도 힘들어서 걷다 뛰다 반복했다",
+    "- 빠르게 뛰려다 무릎이 아파서 한동안 쉰 적이 있다",
+    "- 앞꿈치 착지로 바꾸고 나서 무릎 통증이 확실히 줄었다",
+    "- 옆 사람과 대화되는 속도로 늦췄더니 30분이 훨씬 수월해졌다",
+    "- 음악 BPM 180짜리 틀었더니 케이던스가 자동으로 맞춰졌다",
+    "- 3주쯤 되니까 아침에 안 힘들고 자연스럽게 나가게 됐다",
+    "- 저녁에 슬로우조깅하고 나서 잠이 더 깊어진 걸 느꼈다",
+    "- 비 오는 날 핑계 대고 안 나가다가 제자리 슬로우조깅으로 대체했다",
+    "- 혼자 하니까 작심삼일이라 친구랑 같이 뛰기 시작했다",
+}
+
+
 def _load_experiences() -> str:
     """경험담 풀 로드. 주석/헤더(>, #) 제외하고 '-' 항목만."""
     try:
         if not config.EXPERIENCES_PATH.exists():
             return "(없음)"
         text = config.EXPERIENCES_PATH.read_text(encoding="utf-8")
-        # 템플릿의 예시 문장이 그대로 남아 있으면 쓰지 않는다. 예시를 1인칭으로 녹이면
-        # 겪지 않은 경험을 지어낸 글이 된다. 본인 경험으로 바꾸고 이 안내 줄을 지우면 켜진다.
-        if "예시는 참고용" in text:
-            return "(없음)"
         lines = text.splitlines()
         items = [ln.strip() for ln in lines if ln.strip().startswith("- ")]
+        # 안내 줄("예시는 참고용")이 남아 있으면 템플릿 예시 문장과 똑같은 항목만 뺀다.
+        # 예시를 1인칭으로 녹이면 겪지 않은 경험을 지어낸 글이 된다. 새로 적은 항목은 그대로 쓴다.
+        if "예시는 참고용" in text:
+            items = [it for it in items if it not in _TEMPLATE_EXAMPLES]
         return "\n".join(items) if items else "(없음)"
     except Exception:
         return "(없음)"
@@ -289,6 +303,9 @@ QUALITY_REVISE_SYSTEM = """너는 슬로우조깅 블로그 "슬로우7"의 편�
 - 출처 없는 수치·연구 주장은 검색으로 확인해 출처를 달거나, 확인되지 않으면 삭제·완화한다
 - 의료 행위(약 복용 등)를 암시하는 문장은 고친다
 - 본문 끝, 면책 문구와 "함께 읽으면 좋은 글" 앞에 <h2>참고 자료</h2> 를 넣는다
+
+[절대 넣지 말 것]
+- 무엇을 고쳤는지 설명하는 수정 내역·편집 메모·변경 요약 표. 독자가 보는 본문만 출력한다
 
 """ + quality.QUALITY_RULES + """
 

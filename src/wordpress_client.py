@@ -210,6 +210,17 @@ def list_posts_raw(status: str = "publish", per_page: int = 100) -> list[dict]:
     return out
 
 
+def latest_revision_without(post_id: int, marker: str) -> dict | None:
+    """marker 가 없는 가장 최근 리비전(title.raw, content.raw). 없으면 None."""
+    revs = _req("GET", f"posts/{post_id}/revisions",
+                params={"context": "edit", "per_page": 100, "_fields": "id,date,title,content"})
+    revs.sort(key=lambda r: r.get("date", ""), reverse=True)
+    for r in revs:
+        if marker not in r.get("content", {}).get("raw", ""):
+            return r
+    return None
+
+
 def whoami() -> dict:
     """인증 확인용 — 현재 사용자 정보."""
     url = f"{config.WP_SITE_URL}/wp-json/wp/v2/users/me"

@@ -9,6 +9,7 @@
     .venv/bin/python -m scripts.revise_quality --limit 10      # 10편 미리보기
     .venv/bin/python -m scripts.revise_quality --apply --limit 50   # 실제 반영
     .venv/bin/python -m scripts.revise_quality --id 123 --apply     # 특정 글만
+    .venv/bin/python -m scripts.revise_quality --redo --apply --limit 50  # 이미 고친 글을 원본부터 다시
 
 이미 고친 글은 본문 맨 끝의 표식(QUALITY_MARK)을 보고 건너뛴다.
 """
@@ -27,6 +28,8 @@ QUALITY_MARK = "<!-- slow7-quality:v1 -->"
 OUT_DIR = config.ROOT / "logs" / "revisions"
 # 사진 저작자 표기 링크 — 수정 후에도 반드시 남아 있어야 한다
 PHOTO_HOSTS = ("pexels.com", "unsplash.com", "pixabay.com")
+# 모델이 덧붙이는 편집 메모의 흔적
+EDIT_NOTE_WORDS = ("수정 내역", "편집 참고", "수정 사항 요약", "변경 내역")
 
 
 def _text_len(html: str) -> int:
@@ -46,6 +49,8 @@ def _check(before: str, after: str) -> list[str]:
         lost = set(re.findall(rf'https?://[^"]*{host}[^"]*', before)) - set(after.split('"'))
         if lost:
             problems.append(f"사진 출처 링크 사라짐 {sorted(lost)}")
+    if any(w in after for w in EDIT_NOTE_WORDS):
+        problems.append("수정 내역·편집 메모가 본문에 들어감")
     if "참고 자료" not in after:
         problems.append("참고 자료 섹션 없음")
     return problems
@@ -56,6 +61,8 @@ def main() -> int:
     ap.add_argument("--apply", action="store_true", help="워드프레스에 실제 반영")
     ap.add_argument("--limit", type=int, default=3, help="이번에 처리할 글 수")
     ap.add_argument("--id", type=int, help="특정 글 ID 만 처리")
+    ap.add_argument("--redo", action="store_true",
+                    help="이미 고친 글도 수정 전 원본(워드프레스 리비전)에서 다시 고친다")
     args = ap.parse_args()
 
     missing = config.validate_wp()
@@ -66,7 +73,10 @@ def main() -> int:
     posts = wordpress_client.list_posts_raw()
     if args.id:
         posts = [p for p in posts if p["id"] == args.id]
-    todo = [p for p in posts if QUALITY_MARK not in p["content"]["raw"]][: args.limit]
+    if args.redo:
+        todo = [p for p in posts if QUALITY_MARK in p["content"]["raw"]][: args.limit]
+    else:
+        todo = [p for p in posts if QUALITY_MARK not in p["content"]["raw"]][: args.limit]
     print(f"전체 {len(posts)}편 중 이번 처리 {len(todo)}편 ({'반영' if args.apply else '미리보기'})")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -75,6 +85,14 @@ def main() -> int:
         pid, slug = p["id"], p["slug"]
         title, before = p["title"]["raw"], p["content"]["raw"]
         print(f"\n▶ {pid} {title}")
+        if args.redo:
+            orig = wordpress_client.latest_revision_without(pid, QUALITY_MARK)
+            if not orig:
+                print("  ✗ 수정 전 원본 리비전을 찾지 못함, 건너뜀")
+                fail += 1
+                continue
+            title = (orig.get("title") or {}).get("raw") or title
+            before = orig["content"]["raw"]
         try:
             res = blog_writer.revise_for_quality(title, before)
         except Exception as e:  # 한 편이 실패해도 나머지는 계속
