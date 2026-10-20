@@ -130,6 +130,19 @@ def recent_topic_keys(limit: int = 30) -> list[str]:
     return [r["topic_key"] for r in rows]
 
 
+def blog_topic_keys() -> set[str]:
+    """블로그로 한 번이라도 발행한 토픽 키 전체.
+
+    recent_topic_keys(30)은 SNS 글까지 섞인 최근 30건이라, 블로그 기준으로는
+    한 달 남짓 지나면 같은 토픽이 다시 뽑혔다(실제로 6쌍이 거의 같은 글로 재발행됨).
+    """
+    with conn() as c:
+        rows = c.execute(
+            "SELECT DISTINCT topic_key FROM posts WHERE slot='blog'"
+        ).fetchall()
+    return {r["topic_key"] for r in rows}
+
+
 def recent_post_titles(limit: int = 12) -> list[str]:
     """최근 발행한 글 제목들 — 내용 차별화(중복 방지)에 사용."""
     with conn() as c:
