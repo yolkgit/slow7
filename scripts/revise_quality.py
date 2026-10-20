@@ -25,6 +25,8 @@ from src import blog_writer, config, wordpress_client
 
 QUALITY_MARK = "<!-- slow7-quality:v1 -->"
 OUT_DIR = config.ROOT / "logs" / "revisions"
+# 사진 저작자 표기 링크 — 수정 후에도 반드시 남아 있어야 한다
+PHOTO_HOSTS = ("pexels.com", "unsplash.com", "pixabay.com")
 
 
 def _text_len(html: str) -> int:
@@ -40,6 +42,10 @@ def _check(before: str, after: str) -> list[str]:
         problems.append("면책 문구 사라짐")
     if _text_len(after) < _text_len(before) * 0.6:
         problems.append(f"본문이 너무 짧아짐 {_text_len(before)} → {_text_len(after)}자")
+    for host in PHOTO_HOSTS:
+        lost = set(re.findall(rf'https?://[^"]*{host}[^"]*', before)) - set(after.split('"'))
+        if lost:
+            problems.append(f"사진 출처 링크 사라짐 {sorted(lost)}")
     if "참고 자료" not in after:
         problems.append("참고 자료 섹션 없음")
     return problems
