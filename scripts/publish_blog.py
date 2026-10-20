@@ -99,7 +99,8 @@ def main(topic_key: str | None = None) -> int:
         return 2
 
     db.init()
-    exclude = set(db.recent_topic_keys(limit=30))
+    # 블로그로 이미 쓴 토픽(과 사실상 같은 토픽)은 다시 쓰지 않는다
+    exclude = topics.covered_keys(db.blog_topic_keys())
 
     # 토픽 선택
     if topic_key:
@@ -121,7 +122,18 @@ def main(topic_key: str | None = None) -> int:
         import random
         scores = db.topic_scores()
         all_pool = topics.all_topics()
-        candidates = [t for t in all_pool if t.key not in exclude] or all_pool
+        candidates = [t for t in all_pool if t.key not in exclude]
+        if not candidates:
+            # 예전엔 여기서 전체 풀로 되돌아가 같은 주제를 다시 썼다 → 중복 글.
+            # 새 토픽이 추가될 때까지 발행을 쉬고 알린다.
+            msg = "[blog] 쓸 수 있는 새 토픽이 없어 오늘은 발행을 건너뜀 (src/topics.py 에 토픽 추가 필요)"
+            print(msg)
+            try:
+                from src import telegram_client
+                telegram_client.send_message(msg)
+            except Exception as e:
+                print(f"[blog] 텔레그램 알림 실패: {e}")
+            return 0
 
         # 최근 3개 글의 주제군을 피해서 같은 군 연달아 방지
         recent_keys = db.recent_topic_keys(limit=3)

@@ -51,6 +51,26 @@ _CLUSTERS = {
 }
 
 
+# 키는 달라도 사실상 같은 글이 되는 토픽 묶음.
+# 하나라도 블로그로 나갔으면 나머지도 쓴 것으로 본다.
+_SAME_TOPIC = [
+    {"m_post_meal", "c_fasted_vs_fed", "m_fat_burn"},
+    {"m_no_breath", "n_talk_test"},
+    {"n_heart_rate", "e_zone2"},
+    {"m_rainy_day", "s1_09"},
+    {"p_4week_beginner", "s1_01"},
+]
+
+
+def covered_keys(posted: set[str]) -> set[str]:
+    """이미 쓴 토픽 + 그와 사실상 같은 토픽."""
+    out = set(posted)
+    for group in _SAME_TOPIC:
+        if group & posted:
+            out |= group
+    return out
+
+
 def topic_cluster(topic_key: str) -> str:
     """토픽이 속한 주제군. 내용 중복 회피에 사용."""
     for name, kws in _CLUSTERS.items():
@@ -78,6 +98,10 @@ MORNING: list[Topic] = [
     Topic("m_mindset", "morning", "느리게 가는 게 빠른 거", "속도 욕심 버리는 마인드 셋업", _BASE_TAGS + ("#마인드셋",)),
     Topic("m_buddy", "morning", "친구와 함께 하면 더 좋다", "대화하며 뛰는 사회적 효과", _BASE_TAGS + ("#러닝크루",)),
     Topic("m_streak", "morning", "21일의 법칙", "꾸준함이 만드는 변화 타임라인", _BASE_TAGS + ("#운동챌린지",)),
+    Topic("m_heavy_start", "morning", "체중이 많이 나가도 시작하는 법", "관절 부담 줄이는 걷기·조깅 섞기와 첫 2주 기준", _BASE_TAGS + ("#체중감량",), level="초급"),
+    Topic("m_restart", "morning", "쉬었다가 다시 시작할 때", "2주·한 달·석 달 쉰 뒤 어디서부터 다시 할지", _BASE_TAGS + ("#운동재개",), level="초급"),
+    Topic("m_office_worker", "morning", "바쁜 직장인의 슬로우조깅", "출근 전·점심·퇴근 후 중 현실적인 시간대 고르기", _BASE_TAGS + ("#직장인운동",), level="초급"),
+    Topic("m_slump", "morning", "운동 권태기 넘기기", "한두 달 지나 재미가 떨어질 때 쓰는 방법", _BASE_TAGS + ("#운동권태기",), level="초급"),
 ]
 
 NOON: list[Topic] = [
@@ -95,6 +119,15 @@ NOON: list[Topic] = [
     Topic("n_talk_test", "noon", "토크 테스트", "옆 사람과 대화 되면 적정 강도", _BASE_TAGS + ("#운동강도",)),
     Topic("n_hill", "noon", "오르막 대처법", "보폭 더 줄이고 케이던스 유지", _BASE_TAGS + ("#러닝팁",)),
     Topic("n_route", "noon", "코스 짜는 법", "5-3-2 구간 나누기 (워밍업-본운동-쿨다운)", _BASE_TAGS + ("#러닝루트",)),
+    Topic("n_shin_splints", "noon", "정강이가 아플 때", "신스플린트 원인과 쉬어야 할 때의 기준", _BASE_TAGS + ("#정강이통증",), level="중급"),
+    Topic("n_plantar", "noon", "발바닥 통증과 족저근막", "발뒤꿈치 통증이 있을 때 조정할 것과 병원 갈 때", _BASE_TAGS + ("#족저근막염",), level="중급"),
+    Topic("n_night_safety", "noon", "밤에 뛸 때 안전", "조명·반사 소재·코스 선택", _BASE_TAGS + ("#야간러닝",), level="초급"),
+    Topic("n_summer_heat", "noon", "여름 더위 속 슬로우조깅", "온열질환 신호와 시간대·수분 조절", _BASE_TAGS + ("#여름운동",), level="중급"),
+    Topic("n_winter_layers", "noon", "겨울 옷 겹쳐 입기", "기온별 레이어링과 손·귀 보온", _BASE_TAGS + ("#겨울러닝",), level="초급"),
+    Topic("n_fine_dust", "noon", "미세먼지 많은 날", "실외 운동을 쉴 기준과 실내 대안", _BASE_TAGS + ("#미세먼지",), level="초급"),
+    Topic("n_tracking", "noon", "앱과 워치로 기록하기", "페이스·심박·시간 중 무엇을 볼지", _BASE_TAGS + ("#러닝기록",), level="초급"),
+    Topic("n_strength", "noon", "종아리·엉덩이 보조 근력운동", "주 2회 10분, 부상을 줄이는 기본 동작", _BASE_TAGS + ("#근력운동",), level="중급"),
+    Topic("n_clothes_socks", "noon", "옷과 양말 고르기", "쓸림·물집을 막는 소재와 핏", _BASE_TAGS + ("#러닝복",), level="초급"),
 ]
 
 EVENING: list[Topic] = [
@@ -112,6 +145,16 @@ EVENING: list[Topic] = [
     Topic("e_injury_prevention", "evening", "부상 예방", "느린 페이스가 무릎·아킬레스에 주는 안전마진", _BASE_TAGS + ("#부상예방",)),
     Topic("e_age_research", "evening", "노화 지연 연구", "텔로미어와 유산소 운동의 상관관계", _BASE_TAGS + ("#노화방지",)),
     Topic("e_mental_health", "evening", "우울감 감소", "12주 슬로우조깅으로 항우울제만큼의 효과", _BASE_TAGS + ("#정신건강",)),
+    Topic("e_knee_arthritis", "evening", "무릎 관절염이 있어도 될까", "연구로 본 달리기와 무릎 관절, 조심할 사람", _BASE_TAGS + ("#무릎관절",), level="고급"),
+    Topic("e_bone_density", "evening", "뼈 건강과 체중부하 운동", "골밀도에 걷기·조깅이 주는 자극", _BASE_TAGS + ("#골밀도",), level="고급"),
+    Topic("e_cholesterol", "evening", "콜레스테롤·중성지방", "유산소 운동이 혈중 지질에 주는 변화", _BASE_TAGS + ("#콜레스테롤",), level="고급"),
+    Topic("e_menopause", "evening", "갱년기와 유산소 운동", "갱년기 증상·체중·수면에 대한 근거", _BASE_TAGS + ("#갱년기",), level="고급"),
+    Topic("e_immune", "evening", "적당한 운동과 면역", "중강도 운동과 감기, 너무 많이 하면 생기는 일", _BASE_TAGS + ("#면역력",), level="고급"),
+    Topic("e_gut", "evening", "장 건강과 변비", "가벼운 유산소가 장운동에 주는 영향", _BASE_TAGS + ("#장건강",), level="고급"),
+    Topic("e_resting_hr", "evening", "안정시 심박수 변화 읽기", "몇 주 뒤 심박이 내려가는 이유와 재는 법", _BASE_TAGS + ("#안정시심박",), level="고급"),
+    Topic("e_calorie_math", "evening", "칼로리 소모 현실 계산", "30분에 얼마나 쓰는지, 먹는 것과의 관계", _BASE_TAGS + ("#칼로리",), level="중급"),
+    Topic("e_caffeine", "evening", "운동 전 커피", "카페인이 지구력·심박에 주는 영향과 주의점", _BASE_TAGS + ("#카페인",), level="중급"),
+    Topic("e_alcohol", "evening", "술 마신 다음 날 운동", "탈수·심박 측면에서 쉬어야 할 때", _BASE_TAGS + ("#음주",), level="중급"),
 ]
 
 
@@ -126,6 +169,9 @@ COMPARISON: list[Topic] = [
     Topic("c_vs_cycling", "evening", "슬로우조깅 vs 자전거", "체중부하·칼로리·무릎부담·전신운동 효과 비교", _BASE_TAGS + ("#자전거", "#유산소비교")),
     Topic("c_zone2_vs_hiit", "evening", "존2 vs 고강도(HIIT)", "지방연소·심폐·회복·초보 적합성 비교", _BASE_TAGS + ("#존2", "#HIIT")),
     Topic("c_vs_swimming", "evening", "슬로우조깅 vs 수영", "관절부담·전신·접근성·다이어트 비교", _BASE_TAGS + ("#수영", "#유산소비교")),
+    Topic("c_vs_stairs", "evening", "슬로우조깅 vs 계단 오르기", "심폐·무릎 부담·접근성 비교", _BASE_TAGS + ("#계단운동", "#유산소비교")),
+    Topic("c_vs_jump_rope", "evening", "슬로우조깅 vs 줄넘기", "강도·충격·칼로리 비교", _BASE_TAGS + ("#줄넘기", "#유산소비교")),
+    Topic("c_vs_hiking", "evening", "슬로우조깅 vs 등산", "근력·심폐·부상 위험 비교", _BASE_TAGS + ("#등산", "#유산소비교")),
 ]
 
 # 루틴/플랜형 — 표로 주차별 계획 제시
@@ -133,6 +179,9 @@ PLAN: list[Topic] = [
     Topic("p_4week_beginner", "evening", "초보 4주 슬로우조깅 플랜", "1~4주차 시간·빈도·강도를 주차별 표로", _BASE_TAGS + ("#운동계획", "#초보러닝")),
     Topic("p_diet_8week", "evening", "8주 다이어트 슬로우조깅 플랜", "체중감량 목표 주차별 루틴 표", _BASE_TAGS + ("#다이어트계획", "#체중감량")),
     Topic("p_weekly_routine", "evening", "주간 슬로우조깅 루틴 짜기", "요일별 운동·휴식 배분 표", _BASE_TAGS + ("#주간루틴", "#운동습관")),
+    Topic("p_5k_first", "evening", "처음 5km 완주 플랜", "걷기 섞어 6주 안에 5km를 쉬지 않고 가는 표", _BASE_TAGS + ("#5km", "#초보러닝")),
+    Topic("p_senior_8week", "evening", "60대 이상 8주 플랜", "주 3회, 시간보다 회복을 우선하는 주차별 표", _BASE_TAGS + ("#시니어운동", "#운동계획")),
+    Topic("p_busy_week", "evening", "바쁜 주 유지 플랜", "주 2회만 할 수 있을 때 효과를 지키는 배분", _BASE_TAGS + ("#운동습관", "#주간루틴")),
 ]
 
 
