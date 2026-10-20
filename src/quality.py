@@ -52,7 +52,7 @@ def web_search_tool() -> dict:
     return {
         "type": "web_search_20250305" if old else "web_search_20260209",
         "name": "web_search",
-        "max_uses": 6,
+        "max_uses": 3,  # 검색 결과 본문이 통째로 입력 토큰이 되므로 횟수를 아낀다
         "user_location": {"type": "approximate", "country": "KR"},
     }
 
@@ -95,6 +95,8 @@ def generate_with_search(system: str, user_msg: str, max_tokens: int = 8000) -> 
             tools=[web_search_tool()],
             messages=messages,
         )
+        u = msg.usage
+        print(f"  [토큰] 입력 {u.input_tokens:,} / 출력 {u.output_tokens:,}", flush=True)
         urls |= _search_urls(msg.content)
         text_parts.append("".join(b.text for b in msg.content if getattr(b, "type", "") == "text"))
         if msg.stop_reason != "pause_turn":
