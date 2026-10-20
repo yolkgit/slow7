@@ -98,6 +98,9 @@ def main() -> int:
         except Exception as e:  # 한 편이 실패해도 나머지는 계속
             print(f"  ✗ 수정 실패: {e}")
             fail += 1
+            if "usage limits" in str(e):  # API 월 한도 — 나머지도 전부 실패하므로 중단
+                print("  API 사용 한도에 걸려 중단합니다. 한도를 올린 뒤 다시 실행하면 이어서 고칩니다.")
+                break
             continue
         after = res["content_html"].rstrip() + "\n" + QUALITY_MARK
         problems = _check(before, after)
