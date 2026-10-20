@@ -47,7 +47,7 @@ add_action('template_redirect', function () {
         'short_name'       => '슬로우7',
         'description'      => get_bloginfo('description'),
         'start_url'        => home_url('/?utm_source=pwa'),
-        'scope'            => '/',
+        'scope'            => trailingslashit((string) (parse_url(home_url('/'), PHP_URL_PATH) ?: '/')),
         'display'          => 'standalone',
         'orientation'      => 'portrait',
         'background_color' => '#faf7f0',
