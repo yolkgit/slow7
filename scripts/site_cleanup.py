@@ -8,6 +8,8 @@
    봇의 관련 글 목록에서도 빠지도록 review_queue 상태를 'merged' 로 바꾼다.
 2. 소개 페이지(about) 본문을 wordpress_pages/about.html 로 교체한다.
 3. 예전 기본 카테고리 '슬로우조깅'에만 있는 글을 난이도(초급/중급/고급)로 옮긴다.
+4. 봇 DB 에 남은 옛 블로그 주소(slow7.soritok.com)를 새 주소로 바꾼다
+   (새 글의 '관련 글' 링크가 301 을 거치지 않게).
 """
 from __future__ import annotations
 
@@ -89,12 +91,26 @@ def recategorize(apply: bool) -> None:
         print("  옮길 글 없음")
 
 
+def fix_db_links(apply: bool) -> None:
+    print("\n== 4. 봇 DB 의 옛 주소 ==")
+    old, new = "https://slow7.soritok.com", "https://soritok.com/slow7"
+    with conn() as c:
+        n1 = c.execute("SELECT COUNT(*) FROM review_queue WHERE wp_link LIKE ?", (old + "%",)).fetchone()[0]
+        n2 = c.execute("SELECT COUNT(*) FROM posts WHERE image_url LIKE ?", (old + "%",)).fetchone()[0]
+        print(f"  review_queue {n1}건, posts {n2}건")
+        if apply:
+            c.execute("UPDATE review_queue SET wp_link = replace(wp_link, ?, ?)", (old, new))
+            c.execute("UPDATE posts SET image_url = replace(image_url, ?, ?)", (old, new))
+            print("  ✅ 변경")
+
+
 def main() -> int:
     apply = "--apply" in sys.argv
     db.init()
     merge_duplicates(apply)
     update_about(apply)
     recategorize(apply)
+    fix_db_links(apply)
     if not apply:
         print("\n바꾼 것은 없습니다. 실제 반영은 --apply 로 다시 실행하세요.")
     return 0
