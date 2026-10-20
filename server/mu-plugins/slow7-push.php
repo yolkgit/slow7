@@ -143,8 +143,16 @@ function slow7_push_prune($req)
     return ['deleted' => $n];
 }
 
+/** 블로그 홈의 경로 부분 ('/slow7/'). 서브도메인 시절엔 '/'. */
+if (!function_exists('slow7_home_path')) {
+    function slow7_home_path(): string
+    {
+        return trailingslashit((string) (parse_url(home_url('/'), PHP_URL_PATH) ?: '/'));
+    }
+}
+
 /* ------------------------------------------------------------------
-   서비스워커 — 루트 스코프(/sw.js)로 서빙해야 사이트 전체를 담당한다
+   서비스워커 — 블로그 홈 스코프(<홈>/sw.js)로 서빙해야 사이트 전체를 담당한다
    ------------------------------------------------------------------ */
 
 add_action('init', function () {
@@ -161,7 +169,9 @@ add_filter('redirect_canonical', function ($url) {
 add_action('template_redirect', function () {
     if (!get_query_var('slow7_sw')) return;
     header('Content-Type: application/javascript; charset=utf-8');
-    header('Service-Worker-Allowed: /');
+    // 블로그가 soritok.com/slow7/ 아래로 옮겨졌다. 스코프를 블로그 경로로 한정해야
+    // 같은 도메인의 다른 서비스(/games, /aqua …)까지 서비스워커가 가로채지 않는다.
+    header('Service-Worker-Allowed: ' . slow7_home_path());
     header('Cache-Control: max-age=0, no-cache'); ?>
 self.addEventListener('push', function (event) {
   var d = {};
@@ -178,7 +188,7 @@ self.addEventListener('push', function (event) {
 
 self.addEventListener('notificationclick', function (event) {
   event.notification.close();
-  var url = (event.notification.data && event.notification.data.url) || '/';
+  var url = (event.notification.data && event.notification.data.url) || '<?php echo esc_js(home_url('/')); ?>';
   event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (list) {
     for (var i = 0; i < list.length; i++) {
       if (list[i].url === url && 'focus' in list[i]) return list[i].focus();
@@ -251,7 +261,7 @@ function slow7_push_frontend()
   document.getElementById('s7pYes').addEventListener('click', function () {
     localStorage.setItem(SEEN, '1');
     box.hidden = true;
-    navigator.serviceWorker.register('/sw.js').then(function (reg) {
+    navigator.serviceWorker.register('<?php echo esc_js(home_url('/sw.js')); ?>', { scope: '<?php echo esc_js(slow7_home_path()); ?>' }).then(function (reg) {
       return Notification.requestPermission().then(function (p) {
         if (p !== 'granted') return;
         return reg.pushManager.subscribe({
