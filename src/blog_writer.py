@@ -76,6 +76,7 @@ BLOG_SYSTEM = """너는 슬로우조깅 정보 블로그 "슬로우7"의 메인 
 - AI/ChatGPT/Claude 언급
 - 거짓 정보, 과장된 효능, 없는 연구 인용 (가짜 출처 절대 금지)
 - 광고 문구 (제휴는 나중에 사람이 직접 삽입). 외부 링크는 아래 품질 규칙의 출처·인용에만 쓴다
+- 작성 근거 노트, 발행 전 확인용 메모, 편집 메모 등 독자가 아닌 편집자에게 하는 말. 본문에는 독자가 읽을 내용만 쓴다
 
 """ + quality.QUALITY_RULES + """
 
@@ -226,6 +227,9 @@ def write_blog_post(topic: Topic, recent_titles: list[str]) -> dict:
         )
     else:
         raise ValueError(f"출처 링크 검증 실패: {bad}")
+    content_html, n_notes = quality.strip_internal_notes(content_html)
+    if n_notes:
+        print(f"[quality] 본문에 남은 작업 메모 {n_notes}개 제거")
     data["content_html"] = content_html
 
     # 필수 필드 검증 + 폴백

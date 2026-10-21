@@ -128,3 +128,53 @@ def bad_links(html: str, verified: set[str]) -> list[str]:
         except requests.RequestException as e:
             bad.append(f"{url} ({type(e).__name__})")
     return bad
+
+
+# ----------------------------------------------------------------------
+# 내부 메모 제거
+# 모델이 "[작성 근거 노트 — 발행 전 확인용]" 같은 작업 메모를 본문에 남길 때가 있다
+# (2026-10-21 자동 발행 글에서 실제로 노출됨). 독자에게 보이면 사람이 검수하지 않은
+# 자동 생성 글이라는 신호가 되므로, 발행 전에 그 블록을 통째로 지운다.
+# ----------------------------------------------------------------------
+NOTE_MARKERS = (
+    "발행 전", "작성 근거", "확인용", "근거 노트", "작성 노트", "편집 메모", "편집 참고",
+    "내부 메모", "수정 내역", "변경 내역", "중복 방지", "검색에서 확인", "작성자 메모",
+)
+_BLOCK_RE = re.compile(
+    r"<(p|div|blockquote|ul|ol|aside|details|pre|section|table)\b[^>]*>.*?</\1>",
+    re.S | re.I,
+)
+_HEADING_RE = re.compile(r"<h([2-4])\b[^>]*>(.*?)</h\1>", re.S | re.I)
+
+
+def _has_note(fragment: str) -> bool:
+    text = re.sub(r"<[^>]+>", " ", fragment)
+    return any(m in text for m in NOTE_MARKERS)
+
+
+def strip_internal_notes(html: str) -> tuple[str, int]:
+    """작업 메모 블록을 지운 본문과 지운 개수."""
+    removed = 0
+    # 1) 메모가 소제목이면 그 소제목부터 다음 같은 급 이상 소제목 전까지 통째로
+    while True:
+        hit = next((m for m in _HEADING_RE.finditer(html) if _has_note(m.group(2))), None)
+        if not hit:
+            break
+        level = int(hit.group(1))
+        nxt = re.compile(rf"<h[2-{level}]\b", re.I).search(html, hit.end())
+        disc = html.find("※", hit.end())
+        end_candidates = [i for i in (nxt.start() if nxt else -1, disc) if i != -1]
+        end = min(end_candidates) if end_candidates else len(html)
+        if disc != -1 and end == disc:  # 면책 문구가 든 <p> 시작점까지만
+            end = html.rfind("<", hit.end(), disc)
+        html = html[: hit.start()] + html[end:]
+        removed += 1
+    # 2) 메모가 든 개별 블록 (참고 자료 목록·면책 문구는 표현이 겹치지 않아 안전)
+    def _drop(m: re.Match) -> str:
+        nonlocal removed
+        if _has_note(m.group(0)):
+            removed += 1
+            return ""
+        return m.group(0)
+    html = _BLOCK_RE.sub(_drop, html)
+    return html, removed
