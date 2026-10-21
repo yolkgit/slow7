@@ -104,6 +104,23 @@ def fix_db_links(apply: bool) -> None:
             print("  ✅ 변경")
 
 
+def fix_pages(apply: bool) -> None:
+    """고정 페이지의 남은 흔적: 개인정보처리방침의 예시 메일 주소, 연락처의 GitHub 원본 링크."""
+    print("\n== 5. 고정 페이지 정리 ==")
+    import re
+    for page in _get("pages", per_page=100, context="edit", _fields="id,slug,content"):
+        before = page["content"]["raw"]
+        after = before.replace("slow7@example.com", "yolkacd@naver.com")
+        # 페이지 원본 파일(github.com/yolkgit/slow7/...)로 가는 링크 문단은 독자에게 의미가 없다
+        after = re.sub(r"<p[^>]*>[^<]*(?:<(?!/p)[^<]*)*github\.com/yolkgit/slow7[\s\S]*?</p>", "", after)
+        after = re.sub(r"\n?[^\n]*https?://github\.com/yolkgit/slow7\S*[^\n]*", "", after)
+        if after != before:
+            print(f"  {page['slug']}: 변경 있음")
+            if apply:
+                wp._req("POST", f"pages/{page['id']}", json={"content": after})
+                print("  ✅ 반영")
+
+
 def main() -> int:
     apply = "--apply" in sys.argv
     db.init()
@@ -111,6 +128,7 @@ def main() -> int:
     update_about(apply)
     recategorize(apply)
     fix_db_links(apply)
+    fix_pages(apply)
     if not apply:
         print("\n바꾼 것은 없습니다. 실제 반영은 --apply 로 다시 실행하세요.")
     return 0
