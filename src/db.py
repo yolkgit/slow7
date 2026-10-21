@@ -327,11 +327,12 @@ def update_review_content(wp_post_id: str, content_html: str, title: str | None 
             )
 
 
-def mark_review_status(wp_post_id: str, status: str) -> None:
+def mark_review_status(wp_post_id: str, status: str, wp_link: str | None = None) -> None:
+    """wp_link: 발행 후 고유주소. 초안 때 저장된 ?p=숫자 주소를 덮어써 내부 링크가 301 을 거치지 않게 한다."""
     with conn() as c:
         c.execute(
-            "UPDATE review_queue SET status=?, updated_at=? WHERE wp_post_id=?",
-            (status, int(time.time()), wp_post_id),
+            "UPDATE review_queue SET status=?, wp_link=COALESCE(?, wp_link), updated_at=? WHERE wp_post_id=?",
+            (status, wp_link, int(time.time()), wp_post_id),
         )
 
 
