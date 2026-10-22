@@ -240,7 +240,8 @@ def write_blog_post(topic: Topic, recent_titles: list[str]) -> dict:
     if not data["content_html"].strip():
         raise ValueError("content_html이 비어있음 — 생성 실패")
     # 건강 정보 면책 문구 자동 첨부 (중복 방지)
-    if "정보 제공을 목적" not in data["content_html"]:
+    # 본문(또는 작업 메모)에 비슷한 문장이 있어도 정식 문구가 없으면 붙인다
+    if "※ 이 글은 슬로우조깅에 대한" not in data["content_html"]:
         data["content_html"] = data["content_html"].rstrip() + "\n" + DISCLAIMER_HTML
     return data
 
