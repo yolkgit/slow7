@@ -30,7 +30,7 @@ def _publish(review: dict) -> None:
     try:
         result = wordpress_client.update_post(wp_id, status="publish")
         link = result.get("link", review.get("wp_link", ""))
-        db.mark_review_status(wp_id, "published")
+        db.mark_review_status(wp_id, "published", link or None)
         telegram_client.send_message(f"✅ <b>발행 완료!</b>\n🔗 <a href=\"{link}\">{review['title']}</a>")
         print(f"[review] 발행: {wp_id}")
         _send_push(review, link)

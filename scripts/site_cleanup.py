@@ -10,9 +10,12 @@
 3. 예전 기본 카테고리 '슬로우조깅'에만 있는 글을 난이도(초급/중급/고급)로 옮긴다.
 4. 봇 DB 에 남은 옛 블로그 주소(slow7.soritok.com)를 새 주소로 바꾼다
    (새 글의 '관련 글' 링크가 301 을 거치지 않게).
+5. 고정 페이지의 예시 메일 주소·GitHub 원본 링크를 정리한다.
+6. 본문의 ?p=숫자 내부 링크를 실제 글 주소로 바꾼다. 없는 글로 가는 링크는 걷어 낸다.
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -104,21 +107,83 @@ def fix_db_links(apply: bool) -> None:
             print("  ✅ 변경")
 
 
+_GITHUB_A_RE = re.compile(r"<a\b[^>]*href=[\"']https?://github\.com/yolkgit/slow7[^\"']*[\"'][^>]*>([\s\S]*?)</a>", re.I)
+
+
 def fix_pages(apply: bool) -> None:
     """고정 페이지의 남은 흔적: 개인정보처리방침의 예시 메일 주소, 연락처의 GitHub 원본 링크."""
     print("\n== 5. 고정 페이지 정리 ==")
-    import re
     for page in _get("pages", per_page=100, context="edit", _fields="id,slug,content"):
         before = page["content"]["raw"]
         after = before.replace("slow7@example.com", "yolkacd@naver.com")
-        # 페이지 원본 파일(github.com/yolkgit/slow7/...)로 가는 링크 문단은 독자에게 의미가 없다
-        after = re.sub(r"<p[^>]*>[^<]*(?:<(?!/p)[^<]*)*github\.com/yolkgit/slow7[\s\S]*?</p>", "", after)
-        after = re.sub(r"\n?[^\n]*https?://github\.com/yolkgit/slow7\S*[^\n]*", "", after)
+        # GitHub 화면에서 복사해 붙이며 따라온 원본 파일 링크(제목마다 붙어 있음)는
+        # 링크만 걷고 글자는 남긴다. 줄째 지우면 제목까지 사라진다.
+        after = _GITHUB_A_RE.sub(lambda m: m.group(1), after)
         if after != before:
             print(f"  {page['slug']}: 변경 있음")
             if apply:
                 wp._req("POST", f"pages/{page['id']}", json={"content": after})
                 print("  ✅ 반영")
+
+
+_PLINK = r"(?:https?://(?:soritok\.com/slow7|slow7\.soritok\.com))?/?\?p=(\d+)"
+_ANCHOR_RE = re.compile(r"<a\b[^>]*?href=([\"'])" + _PLINK + r"\1[^>]*>([\s\S]*?)</a>", re.I)
+_LI_RE = re.compile(r"<li>\s*(<a\b[^>]*>[\s\S]*?</a>)\s*</li>\s*", re.I)
+
+
+def _relink(html: str, links: dict[int, str]) -> tuple[str, int, int]:
+    """?p=N 링크를 고유주소로. 없는 글이면 링크만 걷고 글자는 남긴다(목록 항목이면 항목째 삭제)."""
+    def target(pid: str) -> str | None:
+        pid = int(pid)
+        return links.get(pid) or links.get(DUPLICATES.get(pid, -1))
+
+    fixed = dropped = 0
+
+    def drop_li(m):
+        nonlocal dropped
+        a = _ANCHOR_RE.fullmatch(m.group(1))
+        if a and not target(a.group(2)):
+            dropped += 1
+            return ""
+        return m.group(0)
+
+    def sub(m):
+        nonlocal fixed, dropped
+        url = target(m.group(2))
+        if url:
+            fixed += 1
+            return re.sub(r"href=([\"'])" + _PLINK + r"\1", lambda h: f"href={h.group(1)}{url}{h.group(1)}",
+                          m.group(0), count=1)
+        dropped += 1
+        return m.group(3)
+
+    html = _LI_RE.sub(drop_li, html)
+    html = _ANCHOR_RE.sub(sub, html)
+    return html, fixed, dropped
+
+
+def fix_internal_links(apply: bool) -> None:
+    print("\n== 6. ?p=숫자 내부 링크 ==")
+    posts = wp.list_posts_raw("publish")
+    links = {p["id"]: p["link"] for p in posts}
+    total_f = total_d = 0
+    for p in posts:
+        before = p["content"]["raw"]
+        after, f, d = _relink(before, links)
+        if after == before:
+            continue
+        total_f += f
+        total_d += d
+        print(f"  {p['id']} {p['title']['raw']}  고침 {f} · 없는 글 링크 제거 {d}")
+        if apply:
+            wp.update_post(p["id"], content_html=after)
+    print(f"  합계: 고침 {total_f}, 제거 {total_d}")
+    # 다음 글의 '관련 글' 목록도 고유주소를 쓰도록 봇 DB 갱신
+    if apply:
+        with conn() as c:
+            for pid, url in links.items():
+                c.execute("UPDATE review_queue SET wp_link=? WHERE wp_post_id=?", (url, str(pid)))
+        print("  ✅ 봇 DB 링크 갱신")
 
 
 def main() -> int:
@@ -129,6 +194,7 @@ def main() -> int:
     recategorize(apply)
     fix_db_links(apply)
     fix_pages(apply)
+    fix_internal_links(apply)
     if not apply:
         print("\n바꾼 것은 없습니다. 실제 반영은 --apply 로 다시 실행하세요.")
     return 0
