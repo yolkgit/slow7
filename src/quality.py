@@ -179,7 +179,12 @@ def strip_internal_notes(html: str) -> tuple[str, int]:
     html = _BLOCK_RE.sub(_drop, html)
     # 3) 태그 없이 빈 줄로 나뉜 문단 (워드프레스 raw 본문은 <p> 없이 저장되고 화면에서만 감싸진다)
     html, n = _strip_plain_notes(html)
-    return html, removed + n
+    # 4) 코드 블록 표시(```)·구분선이 따옴표 등으로 바뀌어 홀로 남은 문단 (“` 나 — 만 있는 줄)
+    html, k = _JUNK_RE.subn("", html)
+    return html, removed + n + k
+
+
+_JUNK_RE = re.compile(r"(?:^|\n)[ \t]*(?:<p>)?[ \t]*[`“”\"'‘’—–\-]{1,4}[ \t]*(?:</p>)?[ \t]*(?=\n|$)")
 
 
 def _strip_plain_notes(html: str) -> tuple[str, int]:
@@ -194,14 +199,26 @@ def _strip_plain_notes(html: str) -> tuple[str, int]:
         sep = parts[i + 1] if i + 1 < len(parts) else ""
         s = chunk.strip()
         plain = bool(s) and (not s.startswith("<") or re.match(r"<(strong|b|em)\b", s, re.I) is not None)
+        # 메모 줄 바로 아래(빈 줄 없이) <hr>·면책 문구가 붙어 있으면 그 줄부터는 남긴다
+        tail = ""
+        if plain:
+            m = re.search(r"^[ \t]*(<(?!/?(strong|b|em|br)\b)|※)", chunk, re.M | re.I)
+            if m:
+                chunk, tail = chunk[: m.start()], chunk[m.start():]
+                s = chunk.strip()
         if skipping:
-            if plain and not s.startswith("※"):
+            if plain and s and not s.startswith("※"):
+                if tail:
+                    skipping = False
+                    out.append(tail + sep)
                 continue
             skipping = False
         if plain and _has_note(s):
             removed += 1
             # 대괄호 제목형이면 뒤따르는 메모 항목 문단까지
-            skipping = re.match(r"^[*_\s]*(<(strong|b)>)?[*_\s]*\[", s) is not None
+            skipping = not tail and re.match(r"^[*_\s]*(<(strong|b)>)?[*_\s]*\[", s) is not None
+            if tail:
+                out.append(tail + sep)
             continue
-        out.append(chunk + sep)
+        out.append(chunk + tail + sep)
     return "".join(out), removed
