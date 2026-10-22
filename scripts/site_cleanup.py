@@ -107,15 +107,18 @@ def fix_db_links(apply: bool) -> None:
             print("  ✅ 변경")
 
 
+_GITHUB_A_RE = re.compile(r"<a\b[^>]*href=[\"']https?://github\.com/yolkgit/slow7[^\"']*[\"'][^>]*>([\s\S]*?)</a>", re.I)
+
+
 def fix_pages(apply: bool) -> None:
     """고정 페이지의 남은 흔적: 개인정보처리방침의 예시 메일 주소, 연락처의 GitHub 원본 링크."""
     print("\n== 5. 고정 페이지 정리 ==")
     for page in _get("pages", per_page=100, context="edit", _fields="id,slug,content"):
         before = page["content"]["raw"]
         after = before.replace("slow7@example.com", "yolkacd@naver.com")
-        # 페이지 원본 파일(github.com/yolkgit/slow7/...)로 가는 링크 문단은 독자에게 의미가 없다
-        after = re.sub(r"<p[^>]*>[^<]*(?:<(?!/p)[^<]*)*github\.com/yolkgit/slow7[\s\S]*?</p>", "", after)
-        after = re.sub(r"\n?[^\n]*https?://github\.com/yolkgit/slow7\S*[^\n]*", "", after)
+        # GitHub 화면에서 복사해 붙이며 따라온 원본 파일 링크(제목마다 붙어 있음)는
+        # 링크만 걷고 글자는 남긴다. 줄째 지우면 제목까지 사라진다.
+        after = _GITHUB_A_RE.sub(lambda m: m.group(1), after)
         if after != before:
             print(f"  {page['slug']}: 변경 있음")
             if apply:
