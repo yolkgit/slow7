@@ -177,4 +177,31 @@ def strip_internal_notes(html: str) -> tuple[str, int]:
             return ""
         return m.group(0)
     html = _BLOCK_RE.sub(_drop, html)
-    return html, removed
+    # 3) 태그 없이 빈 줄로 나뉜 문단 (워드프레스 raw 본문은 <p> 없이 저장되고 화면에서만 감싸진다)
+    html, n = _strip_plain_notes(html)
+    return html, removed + n
+
+
+def _strip_plain_notes(html: str) -> tuple[str, int]:
+    """'[작성 근거 노트 — …]' 같은 제목 문단과, 그 아래 이어지는 태그 없는 문단을 지운다.
+    <hr>·소제목·※ 면책 문구 등 태그로 시작하는 문단을 만나면 멈춘다."""
+    parts = re.split(r"(\n[ \t]*\n)", html)
+    out: list[str] = []
+    removed = 0
+    skipping = False
+    for i in range(0, len(parts), 2):
+        chunk = parts[i]
+        sep = parts[i + 1] if i + 1 < len(parts) else ""
+        s = chunk.strip()
+        plain = bool(s) and (not s.startswith("<") or re.match(r"<(strong|b|em)\b", s, re.I) is not None)
+        if skipping:
+            if plain and not s.startswith("※"):
+                continue
+            skipping = False
+        if plain and _has_note(s):
+            removed += 1
+            # 대괄호 제목형이면 뒤따르는 메모 항목 문단까지
+            skipping = re.match(r"^[*_\s]*(<(strong|b)>)?[*_\s]*\[", s) is not None
+            continue
+        out.append(chunk + sep)
+    return "".join(out), removed
