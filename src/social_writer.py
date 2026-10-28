@@ -44,6 +44,10 @@ PROMO_SYSTEM = """너는 슬로우조깅 블로그 "슬로우7"의 SNS 홍보 �
 """
 
 
+# write_promo 에 보여줄 최근 글 수 (입력 토큰을 아끼려고 앞 200자씩만)
+SNS_AVOID_SHOWN = 6
+
+
 def _clean(s: str) -> str:
     s = s.strip()
     s = re.sub(r"^```.*?\n", "", s)
@@ -105,11 +109,15 @@ def write_naver_summary(title: str, content_html: str, blog_url: str) -> str:
     return f"{body}\n\n👉 전체 글 보기: {blog_url}"
 
 
-def write_promo(title: str, summary: str, platform: str, blog_url: str | None) -> str:
+def write_promo(
+    title: str, summary: str, platform: str, blog_url: str | None,
+    avoid: list[str] | None = None,
+) -> str:
     """플랫폼용 글 생성.
 
     blog_url 있으면: 클릭 유도 홍보글 + 링크 첨부
     blog_url 없으면: 링크 없는 순수 정보 글 (자연스러운 계정 운영용)
+    avoid: 최근 게시한 글들 — 첫 줄·표현·예시가 겹치지 않게 참고용으로 준다
     """
     limit = LIMITS.get(platform, 300)
     client = Anthropic(api_key=config.ANTHROPIC_API_KEY)
@@ -131,6 +139,13 @@ def write_promo(title: str, summary: str, platform: str, blog_url: str | None) -
             "- 글 자체로 완결된 꿀팁 — 읽고 바로 써먹을 수 있게 핵심을 다 담아라\n"
             "- 마지막 줄은 가벼운 참여 유도 (질문이나 '오늘 해보자!' 같은 실천 제안)\n"
             f"{limit}자 이내로 본문만 출력."
+        )
+
+    if avoid:
+        shown = "\n---\n".join(t[:200] for t in avoid[-SNS_AVOID_SHOWN:])
+        user_msg += (
+            "\n\n[최근에 올린 글 — 이 글들과 첫 줄, 표현, 예시, 숫자가 겹치면 안 됨]\n"
+            f"{shown}"
         )
 
     msg = client.messages.create(

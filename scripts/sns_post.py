@@ -27,7 +27,13 @@ SNS_RECENT_KEY = "sns_recent_topics"
 # 하루 3회 게시하므로 창이 15면 5일이면 같은 토픽이 돌아온다.
 # 실제로 n_talk_test 가 8/28 → 9/2 로 정확히 5일 만에 재등장했다.
 # 연재 제외 후 풀이 49개이므로 30이면 후보가 19개 남아 고갈되지 않는다.
-SNS_RECENT_WINDOW = 30
+# 그래도 30이면 열흘 남짓마다 같은 토픽이 돌아와 반복으로 느껴졌다. 풀이 78개라
+# 60이면 후보가 18개 남는다.
+SNS_RECENT_WINDOW = 60
+
+# 최근 게시한 SNS 본문 (같은 표현·예시 반복 회피용)
+SNS_TEXTS_KEY = "sns_recent_texts"
+SNS_TEXTS_KEEP = 8
 
 
 def _recent_sns_topics(limit: int = SNS_RECENT_WINDOW) -> list[str]:
@@ -39,6 +45,20 @@ def _push_sns_topic(key: str, keep: int = SNS_RECENT_WINDOW) -> None:
     recent = _recent_sns_topics(limit=keep)
     recent.append(key)
     db.kv_set(SNS_RECENT_KEY, ",".join(recent[-keep:]))
+
+
+def _recent_sns_texts() -> list[str]:
+    import json
+    try:
+        return json.loads(db.kv_get(SNS_TEXTS_KEY, "[]") or "[]")
+    except ValueError:
+        return []
+
+
+def _push_sns_text(text: str) -> None:
+    import json
+    texts = (_recent_sns_texts() + [text])[-SNS_TEXTS_KEEP:]
+    db.kv_set(SNS_TEXTS_KEY, json.dumps(texts, ensure_ascii=False))
 
 
 def _strip_html(html: str, limit: int = 200) -> str:
@@ -53,9 +73,13 @@ def _pick_topic(topic_key: str | None):
     if topic_key:
         # 수동 지정은 연재 편도 허용한다
         return next((t for t in topics.all_topics() if t.key == topic_key), None)
-    exclude = set(_recent_sns_topics(limit=SNS_RECENT_WINDOW))
+    recent = _recent_sns_topics(limit=SNS_RECENT_WINDOW)
+    exclude = set(recent)
     candidates = [t for t in all_t if t.key not in exclude] or all_t
-    return random.choice(candidates)
+    # 직전 3개와 같은 주제군(지방연소, 호흡 등)은 피한다 — 키가 달라도 내용이 겹친다
+    recent_clusters = {topics.topic_cluster(k) for k in recent[-3:]}
+    fresh = [t for t in candidates if topics.topic_cluster(t.key) not in recent_clusters]
+    return random.choice(fresh or candidates)
 
 
 def main(topic_key: str | None = None) -> int:
@@ -92,6 +116,7 @@ def main(topic_key: str | None = None) -> int:
     todays_post = db.published_post_today()
     threads_linked_today = db.kv_get("threads_link_date") == today_str
 
+    recent_texts = _recent_sns_texts()
     posted = 0
     for platform in platforms:
         threads_link_used = False
@@ -101,19 +126,26 @@ def main(topic_key: str | None = None) -> int:
                     # 오늘 발행한 새 글을 소개 (하루 1회)
                     summary = _strip_html(todays_post.get("content_html", ""))
                     promo = social_writer.write_promo(
-                        todays_post["title"], summary, platform, todays_post["wp_link"]
+                        todays_post["title"], summary, platform, todays_post["wp_link"],
+                        avoid=recent_texts,
                     )
                     threads_link_used = True
                     print("[sns] threads: 오늘 새 글 소개 (링크 1회)")
                 else:
-                    promo = social_writer.write_promo(topic.title, topic.angle, platform, None)
+                    promo = social_writer.write_promo(
+                        topic.title, topic.angle, platform, None, avoid=recent_texts
+                    )
                     print("[sns] threads: 링크 없는 정보 글")
             else:
-                promo = social_writer.write_promo(topic.title, topic.angle, platform, blog_url)
+                promo = social_writer.write_promo(
+                    topic.title, topic.angle, platform, blog_url, avoid=recent_texts
+                )
 
             print(f"\n[sns] {platform} 글:\n{promo}\n")
             sns_id = social.post_to(platform, promo)
             posted += 1
+            if platform == "threads" and not config.DRY_RUN:
+                _push_sns_text(promo)
             print(f"[sns] ✅ {platform} 게시 (id={sns_id})")
             if threads_link_used and not config.DRY_RUN:
                 db.kv_set("threads_link_date", today_str)
