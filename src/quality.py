@@ -166,10 +166,11 @@ def strip_output_leak(html: str) -> tuple[str, int]:
     while (i := html.find(CONTENT_MARKER)) >= 0:
         # 구분자 바로 앞 몇 줄 안에서 찌꺼기가 시작되는 곳
         window = max(0, i - 3000)
-        starts = [m.start() + window for m in _LEAK_START_RE.finditer(html, window, i)]
+        # finditer(pos, endpos) 의 m.start() 는 이미 html 전체 기준 위치다
+        starts = [m.start() for m in _LEAK_START_RE.finditer(html, window, i)]
         start = min(starts) if starts else i
         start = html.rfind("\n", 0, start) + 1
-        end_m = _LEAK_END_RE.search(html, i)
+        end_m = _LEAK_END_RE.search(html, i + len(CONTENT_MARKER))
         end = end_m.start() if end_m else len(html)
         html = html[:start].rstrip() + "\n\n" + html[end:]
         removed += 1
