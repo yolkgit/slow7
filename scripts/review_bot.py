@@ -72,7 +72,14 @@ def _send_naver_summary(review: dict, link: str) -> None:
         telegram_client.send_message(msg)
         print("[review] 네이버 요약본 전송 완료")
     except Exception as e:
-        print(f"[review] 네이버 요약본 실패(무시): {e}")
+        print(f"[review] 네이버 요약본 실패: {e}")
+        # 조용히 넘어가면 요약본이 왜 안 왔는지 알 길이 없다
+        try:
+            telegram_client.send_message(
+                f"⚠️ 네이버 요약본 생성 실패\n<code>{_html.escape(str(e)[:1000])}</code>"
+            )
+        except Exception:
+            pass
 
 
 def _skip(review: dict) -> None:
