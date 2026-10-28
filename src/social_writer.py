@@ -88,13 +88,19 @@ def write_naver_summary(title: str, content_html: str, blog_url: str) -> str:
         f"[원문 내용]\n{text}\n\n"
         "위 글의 네이버 블로그용 요약 버전을 형식대로 작성해줘."
     )
-    msg = client.messages.create(
-        model=config.ANTHROPIC_MODEL_LIGHT,
+    kwargs = dict(
         max_tokens=1200,
-        temperature=1.0,
         system=NAVER_SYSTEM,
         messages=[{"role": "user", "content": user_msg}],
     )
+    try:
+        msg = client.messages.create(model=config.ANTHROPIC_MODEL_LIGHT, **kwargs)
+    except Exception as e:
+        # 가벼운 모델이 막혀도(단종·설정 오류) 블로그 글 쓰는 모델로 한 번 더 시도
+        if config.ANTHROPIC_MODEL == config.ANTHROPIC_MODEL_LIGHT:
+            raise
+        print(f"[naver] {config.ANTHROPIC_MODEL_LIGHT} 실패 → {config.ANTHROPIC_MODEL} 로 재시도: {e}")
+        msg = client.messages.create(model=config.ANTHROPIC_MODEL, **kwargs)
     body = _clean("".join(b.text for b in msg.content if hasattr(b, "text")))
     return f"{body}\n\n👉 전체 글 보기: {blog_url}"
 
@@ -130,7 +136,6 @@ def write_promo(title: str, summary: str, platform: str, blog_url: str | None) -
     msg = client.messages.create(
         model=config.ANTHROPIC_MODEL_LIGHT,
         max_tokens=400,
-        temperature=1.0,
         system=PROMO_SYSTEM,
         messages=[{"role": "user", "content": user_msg}],
     )
