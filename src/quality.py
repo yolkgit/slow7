@@ -152,9 +152,34 @@ def _has_note(fragment: str) -> bool:
     return any(m in text for m in NOTE_MARKERS)
 
 
+CONTENT_MARKER = "===CONTENT==="
+# 모델이 글을 한 번 쓰고 "보기 좋게 정리해서 다시 출력할게!" 하며 JSON·구분자·본문을 또 내보내면
+# 첫 구분자 뒤를 모두 본문으로 받아 두 벌이 한 글에 들어간다 (2026-10-23 커피 글).
+_LEAK_START_RE = re.compile(r"다시 출력|```|`json|^[ \t]*(?:<p>)?\{", re.M)
+_LEAK_END_RE = re.compile(r"<h2>함께 읽으면 좋은 글|<hr\b", re.I)
+
+
+def strip_output_leak(html: str) -> tuple[str, int]:
+    """본문에 섞인 두 번째 출력(구분자 앞 '다시 출력'·코드 펜스·JSON 부터 두 번째 본문 끝까지)을 지운다.
+    첫 번째 본문과, 발행 때 붙은 '함께 읽으면 좋은 글'·면책 문구는 남긴다."""
+    removed = 0
+    while (i := html.find(CONTENT_MARKER)) >= 0:
+        # 구분자 바로 앞 몇 줄 안에서 찌꺼기가 시작되는 곳
+        window = max(0, i - 3000)
+        starts = [m.start() + window for m in _LEAK_START_RE.finditer(html, window, i)]
+        start = min(starts) if starts else i
+        start = html.rfind("\n", 0, start) + 1
+        end_m = _LEAK_END_RE.search(html, i)
+        end = end_m.start() if end_m else len(html)
+        html = html[:start].rstrip() + "\n\n" + html[end:]
+        removed += 1
+    return html, removed
+
+
 def strip_internal_notes(html: str) -> tuple[str, int]:
     """작업 메모 블록을 지운 본문과 지운 개수."""
-    removed = 0
+    # 0) 두 번 출력된 글의 두 번째 벌
+    html, removed = strip_output_leak(html)
     # 1) 메모가 소제목이면 그 소제목부터 다음 같은 급 이상 소제목 전까지 통째로
     while True:
         hit = next((m for m in _HEADING_RE.finditer(html) if _has_note(m.group(2))), None)
