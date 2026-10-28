@@ -285,6 +285,28 @@ def _notify_telegram(post: dict, link: str, wp_id) -> None:
         print(f"[blog] 텔레그램 알림 실패(무시): {e}")
 
 
+def _notify_failure(reason: str) -> None:
+    """발행이 멈추면 텔레그램으로 알린다. 조용히 끊기면 사람이 알아챌 방법이 없다."""
+    import html as _html
+    try:
+        from src import telegram_client
+        telegram_client.send_message(
+            f"❌ <b>블로그 자동 발행 실패</b>\n\n<code>{_html.escape(reason[:1500])}</code>"
+        )
+    except Exception as e:
+        print(f"[blog] 실패 알림 전송 실패: {e}")
+
+
 if __name__ == "__main__":
+    import traceback
+
     arg = sys.argv[1] if len(sys.argv) > 1 else None
-    raise SystemExit(main(arg))
+    try:
+        code = main(arg)
+    except Exception as e:
+        traceback.print_exc()
+        _notify_failure(f"{type(e).__name__}: {e}")
+        raise SystemExit(1)
+    if code != 0:
+        _notify_failure(f"종료 코드 {code} — 서버 logs/blog_*.log 확인 필요")
+    raise SystemExit(code)
