@@ -90,7 +90,6 @@ def write_naver_summary(title: str, content_html: str, blog_url: str) -> str:
     )
     kwargs = dict(
         max_tokens=1200,
-        temperature=1.0,
         system=NAVER_SYSTEM,
         messages=[{"role": "user", "content": user_msg}],
     )
@@ -137,7 +136,6 @@ def write_promo(title: str, summary: str, platform: str, blog_url: str | None) -
     msg = client.messages.create(
         model=config.ANTHROPIC_MODEL_LIGHT,
         max_tokens=400,
-        temperature=1.0,
         system=PROMO_SYSTEM,
         messages=[{"role": "user", "content": user_msg}],
     )
