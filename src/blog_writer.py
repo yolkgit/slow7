@@ -161,7 +161,7 @@ DISCLAIMER_HTML = (
 )
 
 
-CONTENT_MARKER = "===CONTENT==="
+CONTENT_MARKER = quality.CONTENT_MARKER
 
 
 def _extract_json(s: str) -> dict:
@@ -230,6 +230,8 @@ def write_blog_post(topic: Topic, recent_titles: list[str]) -> dict:
     content_html, n_notes = quality.strip_internal_notes(content_html)
     if n_notes:
         print(f"[quality] 본문에 남은 작업 메모 {n_notes}개 제거")
+    if quality.CONTENT_MARKER in content_html or "```" in content_html:
+        raise ValueError("본문에 출력 형식 찌꺼기(===CONTENT===·```)가 남음 — 발행하지 않음")
     data["content_html"] = content_html
 
     # 필수 필드 검증 + 폴백
