@@ -109,6 +109,75 @@ def write_naver_summary(title: str, content_html: str, blog_url: str) -> str:
     return f"{body}\n\n👉 전체 글 보기: {blog_url}"
 
 
+WEATHER_SYSTEM = """너는 슬로우조깅 블로그 "슬로우7"의 스레드(Threads) 계정을 운영한다.
+매일 아침·점심에 그날 날씨와 환경에 맞춘 짧은 생활 정보 글을 올린다.
+읽는 사람은 출근·점심·퇴근 사이에 피드를 넘기는 평범한 직장인이다.
+
+[가장 중요]
+- [오늘 날씨] 에 있는 숫자·사실만 쓴다. 없는 수치, 지어낸 연구·통계 금지.
+- 오늘이라서 쓸모 있는 정보 한두 가지만. 날씨 중계로 끝내지 말고 "그래서 뭘 하면 되는지"를 구체적으로.
+  (예: 몇 시에 나가면 좋은지, 뭘 입고 뭘 챙길지, 실내에서 대신 할 것)
+- 걷기·가벼운 달리기 이야기는 자연스러울 때만 한 줄. 억지로 운동 이야기로 끌고 가지 않는다.
+
+[말투]
+- 사람이 직접 쓴 것 같은 편한 해요체. 담백하게.
+- 과장된 감탄, "여러분~", "~하시죠?", "꿀팁 대방출" 같은 상투어 금지.
+- 이모지는 없거나 1개. 해시태그는 넣지 않는다.
+- 매번 같은 틀(인사 → 날씨 → 팁 → 질문)로 쓰지 않는다. 첫 줄은 오늘 날씨에서 가장 눈에 띄는 사실로.
+
+[형식]
+- 3~6줄, 줄마다 짧게. 목록 기호(-, •)는 쓰고 싶을 때만.
+- 마지막에 억지 질문을 붙이지 않는다.
+- 링크·블로그 언급 금지.
+
+[출력] 글 본문만. 따옴표·설명 없이.
+"""
+
+
+def write_weather_post(
+    slot: str, facts: str, focus: list[str], extra: list[str],
+    platform: str = "threads", avoid: list[str] | None = None,
+) -> str:
+    """오늘 날씨·환경 사실을 바탕으로 한 짧은 정보 글.
+
+    slot: "morning" | "lunch"
+    facts: weather.facts_text() 결과
+    focus: 이번 글의 중심 포인트 (1~2개)
+    extra: 참고만 할 나머지 포인트
+    """
+    limit = min(LIMITS.get(platform, 300), 350)
+    when = {
+        "morning": "아침 (출근 전에 볼 글 — 오늘 하루 준비)",
+        "lunch": "점심 (점심시간에 볼 글 — 오후와 퇴근 후 준비)",
+    }[slot]
+    user_msg = (
+        f"[올리는 때]\n{when}\n\n"
+        f"[오늘 날씨]\n{facts}\n\n"
+        "[이번 글의 중심 — 이것 위주로]\n" + "\n".join(f"- {p}" for p in focus)
+    )
+    if extra:
+        user_msg += "\n\n[참고만 — 꼭 필요할 때만 한 줄]\n" + "\n".join(f"- {p}" for p in extra)
+    user_msg += f"\n\n{limit}자 이내로 본문만."
+    if avoid:
+        shown = "\n---\n".join(t[:160] for t in avoid[-SNS_AVOID_SHOWN:])
+        user_msg += (
+            "\n\n[최근에 올린 글 — 첫 줄, 문장 틀, 표현이 겹치면 안 됨]\n"
+            f"{shown}"
+        )
+
+    client = Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    msg = client.messages.create(
+        model=config.ANTHROPIC_MODEL_LIGHT,
+        max_tokens=400,
+        system=WEATHER_SYSTEM,
+        messages=[{"role": "user", "content": user_msg}],
+    )
+    body = _clean("".join(b.text for b in msg.content if hasattr(b, "text")))
+    if len(body) > limit:
+        body = body[:limit].rsplit("\n", 1)[0]
+    return body
+
+
 def write_promo(
     title: str, summary: str, platform: str, blog_url: str | None,
     avoid: list[str] | None = None,
