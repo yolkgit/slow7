@@ -109,26 +109,22 @@ def write_naver_summary(title: str, content_html: str, blog_url: str) -> str:
     return f"{body}\n\n👉 전체 글 보기: {blog_url}"
 
 
-WEATHER_SYSTEM = """너는 슬로우조깅 블로그 "슬로우7"의 스레드(Threads) 계정을 운영한다.
-매일 아침·점심에 그날 날씨와 환경에 맞춘 짧은 생활 정보 글을 올린다.
-읽는 사람은 출근·점심·퇴근 사이에 피드를 넘기는 평범한 직장인이다.
+THREADS_VOICE = """너는 스레드(Threads)에 글 쓰는 평범한 러너다. 슬로우조깅(천천히 오래 달리기)을 좋아하고,
+출근 전이나 점심에 피드에 짧게 한마디 남기는 사람. 계정 이름은 "슬로우7".
 
-[가장 중요]
-- [오늘 날씨] 에 있는 숫자·사실만 쓴다. 없는 수치, 지어낸 연구·통계 금지.
-- 오늘이라서 쓸모 있는 정보 한두 가지만. 날씨 중계로 끝내지 말고 "그래서 뭘 하면 되는지"를 구체적으로.
-  (예: 몇 시에 나가면 좋은지, 뭘 입고 뭘 챙길지, 실내에서 대신 할 것)
-- 걷기·가벼운 달리기 이야기는 자연스러울 때만 한 줄. 억지로 운동 이야기로 끌고 가지 않는다.
+[말투 — 스레드에서 사람들이 실제로 쓰는 반말]
+- 친구한테 말하듯 편한 반말. "~했음", "~인 듯", "~하자", "~더라", "ㅋㅋ" 정도는 자연스러우면 섞어도 됨.
+- 혼잣말·감상·질문이 섞인 짧은 문장. 줄바꿈 자주.
+- 광고·정보 블로그 같은 말투 금지: "꿀팁", "알아볼까요", "~하는 방법", "여러분", 존댓말, 번호 매긴 목록.
+- 마모루식 과장("가자!!", "~다고!", 🔥 남발)도 금지. 이모지는 없거나 1개.
+- 해시태그·링크 넣지 않는다.
 
-[말투]
-- 사람이 직접 쓴 것 같은 편한 해요체. 담백하게.
-- 과장된 감탄, "여러분~", "~하시죠?", "꿀팁 대방출" 같은 상투어 금지.
-- 이모지는 없거나 1개. 해시태그는 넣지 않는다.
-- 매번 같은 틀(인사 → 날씨 → 팁 → 질문)로 쓰지 않는다. 첫 줄은 오늘 날씨에서 가장 눈에 띄는 사실로.
-
-[형식]
-- 3~6줄, 줄마다 짧게. 목록 기호(-, •)는 쓰고 싶을 때만.
-- 마지막에 억지 질문을 붙이지 않는다.
-- 링크·블로그 언급 금지.
+[내용]
+- 주어진 사실만 숫자로 쓴다. 기록·거리·장소·사람 같은 구체적인 경험을 지어내지 않는다.
+  ("나도 그런 적 있음" 같은 가벼운 공감은 괜찮다)
+- 읽고 나서 써먹을 게 하나는 있게. 길게 설명하지 말고 한두 줄로.
+- 매번 같은 틀로 시작하지 않는다. 인사로 시작하지 않는다.
+- 3~6줄, 짧게.
 
 [출력] 글 본문만. 따옴표·설명 없이.
 """
@@ -147,8 +143,8 @@ def write_weather_post(
     """
     limit = min(LIMITS.get(platform, 300), 350)
     when = {
-        "morning": "아침 (출근 전에 볼 글 — 오늘 하루 준비)",
-        "lunch": "점심 (점심시간에 볼 글 — 오후와 퇴근 후 준비)",
+        "morning": "아침 (출근 전 — 오늘 날씨 보고 한마디)",
+        "lunch": "점심 (점심시간 — 오후·퇴근 후 날씨 보고 한마디)",
     }[slot]
     user_msg = (
         f"[올리는 때]\n{when}\n\n"
@@ -169,13 +165,64 @@ def write_weather_post(
     msg = client.messages.create(
         model=config.ANTHROPIC_MODEL_LIGHT,
         max_tokens=400,
-        system=WEATHER_SYSTEM,
+        system=THREADS_VOICE,
         messages=[{"role": "user", "content": user_msg}],
     )
     body = _clean("".join(b.text for b in msg.content if hasattr(b, "text")))
     if len(body) > limit:
         body = body[:limit].rsplit("\n", 1)[0]
     return body
+
+
+def write_issue_post(
+    slot: str, issues: list[str], weather_line: str = "",
+    platform: str = "threads", avoid: list[str] | None = None,
+) -> tuple[int | None, str]:
+    """요즘 러닝 쪽 화제 중 하나를 골라 사람 말투로 한마디.
+
+    issues: 화제 목록 (기사 제목·스레드 글 앞부분). 번호는 1부터.
+    반환: (고른 번호 또는 None, 본문). 고를 만한 게 없으면 (None, "").
+    """
+    limit = min(LIMITS.get(platform, 300), 350)
+    listing = "\n".join(f"{i}. {t}" for i, t in enumerate(issues, 1))
+    user_msg = (
+        f"[올리는 때]\n{'아침' if slot == 'morning' else '점심'}\n\n"
+        f"[요즘 러닝 쪽에서 돌고 있는 얘기 — 기사 제목이나 남들 글]\n{listing}\n\n"
+    )
+    if weather_line:
+        user_msg += f"[오늘 날씨 — 자연스러우면 한 줄만]\n{weather_line}\n\n"
+    user_msg += (
+        "위에서 러너들이 반응할 만한 걸 하나 골라서, 그 얘기를 본 사람처럼 한마디 써줘.\n"
+        "- 대회·이벤트면 언제 뭐가 있는지, 나가는 사람한테 도움 될 한 줄.\n"
+        "- 화제·논쟁이면 내 생각이나 슬로우조깅 하는 입장에서 한마디.\n"
+        "- 제목에 없는 사실(날짜·기록·참가자 수 등)은 지어내지 마.\n"
+        "- 남의 글을 그대로 옮기지 마.\n"
+        "- 러닝과 관계없거나 사건·사고·정치 얘기면 고르지 마.\n\n"
+        "출력 형식:\n첫 줄에 '번호: N' (고를 게 없으면 '번호: 0')\n빈 줄\n본문"
+        f" ({limit}자 이내)"
+    )
+    if avoid:
+        shown = "\n---\n".join(t[:160] for t in avoid[-SNS_AVOID_SHOWN:])
+        user_msg += f"\n\n[최근에 올린 글 — 첫 줄·표현 겹치지 않게]\n{shown}"
+
+    client = Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    msg = client.messages.create(
+        model=config.ANTHROPIC_MODEL_LIGHT,
+        max_tokens=450,
+        system=THREADS_VOICE,
+        messages=[{"role": "user", "content": user_msg}],
+    )
+    raw = _clean("".join(b.text for b in msg.content if hasattr(b, "text")))
+    m = re.match(r"\s*번호\s*[:：]\s*(\d+)\s*\n?", raw)
+    if not m:
+        return None, ""
+    n = int(m.group(1))
+    body = raw[m.end():].strip()
+    if n < 1 or n > len(issues) or not body:
+        return None, ""
+    if len(body) > limit:
+        body = body[:limit].rsplit("\n", 1)[0]
+    return n, body
 
 
 def write_promo(
