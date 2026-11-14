@@ -1,15 +1,20 @@
-"""SNS 게시 — 아침·점심 하루 두 번, 그날 날씨·환경에 맞춘 생활 정보 글.
+"""SNS 게시 — 아침·점심 하루 두 번. 스레드 사람들처럼 반말로,
+그날 날씨 얘기와 요즘 러닝 쪽 화제(대회·이벤트·이슈) 얘기를 섞어서.
 
     python -m scripts.sns_post               # 지금 시각으로 슬롯 판단 (아침/점심 외엔 건너뜀)
     python -m scripts.sns_post morning       # 슬롯 지정 (시각 검사 생략)
     python -m scripts.sns_post lunch --force # 오늘 이미 올렸어도 다시
+    python -m scripts.sns_post lunch --issue # 화제 글로 (없으면 날씨 글)
+    python -m scripts.sns_post morning --weather  # 날씨 글로
 
 흐름:
     1) 지금 시각(KST)으로 슬롯 결정 — 아침 5~10시, 점심 11~14시. 그 밖이면 아무것도 안 함.
        같은 슬롯은 하루 한 번만 (cron 이 여러 번 돌아도 중복 게시 안 됨).
     2) Open-Meteo 에서 오늘 날씨·미세먼지를 받아 사실 묶음과 "짚을 포인트"를 만든다.
     3) 최근 글에서 쓴 각도(옷차림/미세먼지/비…)는 피해서 이번 글의 중심을 고른다.
-    4) 가벼운 모델로 짧은 글 생성 → 플랫폼에 게시.
+    4) 요즘 러닝 화제(스레드 검색·뉴스)를 모아, 점심엔 주로·아침엔 가끔 화제 글로.
+       화제가 없거나 날씨가 궂은 날(비·미세먼지 나쁨·한파)은 날씨 글.
+    5) 가벼운 모델로 짧은 글 생성 → 플랫폼에 게시.
        블로그 새 글이 발행된 날엔 점심 글 끝에 한 줄 소개 + 링크 (하루 1회).
 """
 from __future__ import annotations
@@ -23,7 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src import config, db, social, social_writer, weather
+from src import config, db, social, social_writer, trends, weather
 
 # 슬롯별 게시 시간대 (KST, 시 단위 끝 포함)
 SLOT_HOURS = {"morning": (5, 10), "lunch": (11, 14)}
@@ -38,6 +43,14 @@ SNS_TEXTS_KEEP = 8
 # 최근 글의 중심 각도 (같은 각도 연속 회피)
 SNS_ANGLES_KEY = "sns_recent_angles"
 SNS_ANGLES_KEEP = 4
+
+# 이미 글로 쓴 화제 (같은 기사·글 재사용 방지)
+SNS_ISSUES_KEY = "sns_used_issues"
+SNS_ISSUES_KEEP = 60
+
+# 화제 글 비율 (화제가 있을 때). 날씨가 궂은 날은 날씨 글이 우선.
+ISSUE_RATIO = {"morning": 0.25, "lunch": 0.7}
+URGENT_ANGLES = ("비·눈", "더위")
 
 
 def _now() -> dt.datetime:
@@ -140,8 +153,41 @@ def main(argv: list[str]) -> int:
     linked_today = db.kv_get("threads_link_date") == today
 
     recent_texts = _load_list(SNS_TEXTS_KEY)
-    posted = 0
     body = None
+    used_issue = None
+
+    # 화제 글로 갈지 결정
+    urgent_weather = any(p[0] in URGENT_ANGLES or (p[0] == "미세먼지" and "좋음" not in p[1])
+                         or "한파" in p[1] for p in focus)
+    # 날씨가 궂은 날은 아침엔 날씨 글만, 점심엔 화제 글 비율을 낮춘다
+    ratio = ISSUE_RATIO[slot] * (0 if slot == "morning" else 0.5) if urgent_weather else ISSUE_RATIO[slot]
+    want_issue = "--issue" in argv or ("--weather" not in argv and random.random() < ratio)
+    if want_issue:
+        used_keys = set(_load_list(SNS_ISSUES_KEY))
+        issues = trends.collect(used_keys)[:8]
+        print(f"[sns] 화제 후보 {len(issues)}개: {[i.text[:30] for i in issues]}")
+        if issues:
+            first_win = next(iter(w.windows.values()), None)
+            if urgent_weather:
+                wline = focus[0][1]
+            elif first_win:
+                wline = f"{first_win.name} {first_win.sky}, 체감 {first_win.feels_min}~{first_win.feels_max}℃"
+            else:
+                wline = ""
+            try:
+                n, text = social_writer.write_issue_post(
+                    slot, [i.text for i in issues], wline, avoid=recent_texts,
+                )
+            except Exception as e:
+                print(f"[sns] 화제 글 생성 실패 — 날씨 글로: {e}")
+                n, text = None, ""
+            if n:
+                body, used_issue = text, issues[n - 1]
+                print(f"[sns] 화제 글: {used_issue.text}")
+            else:
+                print("[sns] 고를 만한 화제 없음 — 날씨 글로")
+
+    posted = 0
     for platform in platforms:
         try:
             if body is None:
@@ -176,8 +222,11 @@ def main(argv: list[str]) -> int:
     if posted and not config.DRY_RUN:
         _mark_done(today, slot)
         _push_list(SNS_TEXTS_KEY, body, SNS_TEXTS_KEEP)
-        for p in focus:
-            _push_list(SNS_ANGLES_KEY, p[0], SNS_ANGLES_KEEP)
+        if used_issue:
+            _push_list(SNS_ISSUES_KEY, used_issue.key, SNS_ISSUES_KEEP)
+        else:
+            for p in focus:
+                _push_list(SNS_ANGLES_KEY, p[0], SNS_ANGLES_KEEP)
 
     print(f"\n[sns] 총 {posted}개 플랫폼 게시 완료")
     return 0
