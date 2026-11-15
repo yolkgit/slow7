@@ -54,6 +54,9 @@ def _clean(s: str) -> str:
     s = re.sub(r"\n```$", "", s)
     if (s.startswith('"') and s.endswith('"')):
         s = s[1:-1]
+    # SNS 는 마크다운이 안 먹어서 **굵게**, __굵게__ 별표가 그대로 보인다
+    s = re.sub(r"\*\*(.+?)\*\*", r"\1", s)
+    s = re.sub(r"__(.+?)__", r"\1", s)
     return s.strip()
 
 
