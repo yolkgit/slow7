@@ -24,6 +24,8 @@ LON = float(os.getenv("SNS_WEATHER_LON", "126.9780"))
 PLACE = os.getenv("SNS_WEATHER_PLACE", "서울")
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+# Open-Meteo 가 안 될 때 쓰는 예비 (무료, 키 없음, 3시간 단위, 미세먼지 없음)
+WTTR_URL = "https://wttr.in/{lat},{lon}"
 AIR_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
 # 시간대 (KST 시 단위, 끝 포함)
@@ -175,11 +177,11 @@ class DayWeather:
     yesterday_max: float | None = None
 
 
-def _get(url: str, params: dict) -> dict:
+def _get(url: str, params: dict, tries: int = 2) -> dict:
     last = None
-    for _ in range(2):
+    for _ in range(tries):
         try:
-            r = requests.get(url, params=params, timeout=20)
+            r = requests.get(url, params=params, timeout=(5, 12))
             r.raise_for_status()
             return r.json()
         except Exception as e:  # 네트워크 일시 오류면 한 번 더
@@ -188,29 +190,107 @@ def _get(url: str, params: dict) -> dict:
 
 
 def fetch(today: dt.date | None = None) -> DayWeather:
-    """오늘 하루 날씨·대기질을 받아 정리한다."""
-    fc = _get(FORECAST_URL, {
-        "latitude": LAT, "longitude": LON, "timezone": "Asia/Seoul",
-        "past_days": 1, "forecast_days": 1, "wind_speed_unit": "ms",
-        "hourly": ",".join([
-            "temperature_2m", "apparent_temperature", "precipitation_probability",
-            "precipitation", "weather_code", "wind_speed_10m", "uv_index",
-            "relative_humidity_2m",
-        ]),
-        "daily": ",".join([
-            "temperature_2m_max", "temperature_2m_min", "sunrise", "sunset",
-            "precipitation_probability_max", "uv_index_max",
-        ]),
-    })
+    """오늘 하루 날씨·대기질을 받아 정리한다. Open-Meteo 가 안 되면 wttr.in 으로."""
+    try:
+        fc = _get(FORECAST_URL, {
+            "latitude": LAT, "longitude": LON, "timezone": "Asia/Seoul",
+            "past_days": 1, "forecast_days": 1, "wind_speed_unit": "ms",
+            "hourly": ",".join([
+                "temperature_2m", "apparent_temperature", "precipitation_probability",
+                "precipitation", "weather_code", "wind_speed_10m", "uv_index",
+                "relative_humidity_2m",
+            ]),
+            "daily": ",".join([
+                "temperature_2m_max", "temperature_2m_min", "sunrise", "sunset",
+                "precipitation_probability_max", "uv_index_max",
+            ]),
+        })
+    except RuntimeError as e:
+        print(f"[weather] Open-Meteo 안 됨 → wttr.in 으로: {e}")
+        return parse(wttr_to_openmeteo(fetch_wttr()), {}, today)
     try:
         air = _get(AIR_URL, {
             "latitude": LAT, "longitude": LON, "timezone": "Asia/Seoul",
             "forecast_days": 1, "hourly": "pm10,pm2_5",
-        })
+        }, tries=1)
     except RuntimeError as e:
         print(f"[weather] 대기질 못 받음 — 미세먼지 없이 진행: {e}")
         air = {}
     return parse(fc, air, today)
+
+
+def fetch_wttr() -> dict:
+    return _get(WTTR_URL.format(lat=LAT, lon=LON), {"format": "j1", "lang": "ko"})
+
+
+def _wwo_to_wmo(code: int) -> int:
+    """wttr.in(WWO) 날씨 코드 → WMO 코드 (대략)."""
+    if code == 113:
+        return 0
+    if code == 116:
+        return 2
+    if code in (119, 122):
+        return 3
+    if code in (143, 248, 260):
+        return 45
+    if code in (200, 386, 389, 392, 395):
+        return 95
+    if code in (179, 227, 230, 323, 326, 329, 332, 335, 338, 368, 371):
+        return 73 if code < 332 or code == 368 else 75
+    if code in (182, 185, 281, 284, 311, 314, 317, 320, 350, 362, 365, 374, 377):
+        return 66
+    if code in (176, 263, 266, 293, 296, 353):
+        return 61
+    if code in (299, 302, 356):
+        return 63
+    if code in (305, 308, 359):
+        return 65
+    return 3
+
+
+def _ampm_to_hhmm(s: str) -> str:
+    try:
+        t = dt.datetime.strptime(s.strip(), "%I:%M %p")
+        return t.strftime("%H:%M")
+    except ValueError:
+        return ""
+
+
+def wttr_to_openmeteo(j: dict) -> dict:
+    """wttr.in j1 응답을 parse() 가 읽는 Open-Meteo 꼴로 바꾼다 (3시간 값을 매 시간으로 펼침)."""
+    hourly = {k: [] for k in ("time", "temperature_2m", "apparent_temperature",
+                              "precipitation_probability", "precipitation", "weather_code",
+                              "wind_speed_10m", "uv_index", "relative_humidity_2m")}
+    daily = {k: [] for k in ("time", "temperature_2m_max", "temperature_2m_min", "sunrise",
+                             "sunset", "precipitation_probability_max", "uv_index_max")}
+    for day in j.get("weather", [])[:1]:
+        date = day["date"]
+        hours = day.get("hourly", [])
+        for h in hours:
+            start = int(h.get("time", "0")) // 100
+            for hh in range(start, min(start + 3, 24)):
+                hourly["time"].append(f"{date}T{hh:02d}:00")
+                hourly["temperature_2m"].append(float(h["tempC"]))
+                hourly["apparent_temperature"].append(float(h.get("FeelsLikeC", h["tempC"])))
+                hourly["precipitation_probability"].append(
+                    max(int(h.get("chanceofrain", 0)), int(h.get("chanceofsnow", 0))))
+                hourly["precipitation"].append(float(h.get("precipMM", 0)) / 3)
+                hourly["weather_code"].append(_wwo_to_wmo(int(h.get("weatherCode", 119))))
+                hourly["wind_speed_10m"].append(round(float(h.get("windspeedKmph", 0)) / 3.6, 1))
+                hourly["uv_index"].append(float(h.get("uvIndex", 0)))
+                hourly["relative_humidity_2m"].append(float(h.get("humidity", 0)))
+        astro = (day.get("astronomy") or [{}])[0]
+        daily["time"].append(date)
+        daily["temperature_2m_max"].append(float(day["maxtempC"]))
+        daily["temperature_2m_min"].append(float(day["mintempC"]))
+        daily["sunrise"].append(f"{date}T{_ampm_to_hhmm(astro.get('sunrise', ''))}")
+        daily["sunset"].append(f"{date}T{_ampm_to_hhmm(astro.get('sunset', ''))}")
+        daily["precipitation_probability_max"].append(
+            max(hourly["precipitation_probability"] or [0]))
+        daily["uv_index_max"].append(max(hourly["uv_index"] or [0]))
+    if not daily["time"]:
+        raise RuntimeError("wttr.in 응답에 날씨 없음")
+    return {"hourly": hourly, "daily": daily}
 
 
 def _val(seq, i):

@@ -136,17 +136,20 @@ def main(argv: list[str]) -> int:
     try:
         w = weather.fetch(now.date())
     except Exception as e:
-        # 날씨 없이 엉뚱한 글을 올리느니 이번 회차는 쉰다
-        print(f"[sns] ❌ 날씨 정보를 못 받아 이번 회차 건너뜀: {e}")
-        return 1
+        # 날씨를 못 받으면 날씨 글은 못 쓰니, 러닝 화제 글로만 시도한다
+        print(f"[sns] ⚠️ 날씨 정보를 못 받음 — 화제 글로만 시도: {e}")
+        w = None
 
-    facts = weather.facts_text(w, slot)
-    points = weather.check_points(w, slot)
-    recent_angles = _load_list(SNS_ANGLES_KEY)
-    focus, extra = pick_focus(points, recent_angles)
     print(f"[sns] 슬롯: {slot} | 플랫폼: {platforms}")
-    print(f"[sns] 오늘 날씨:\n{facts}")
-    print(f"[sns] 중심: {[p[0] for p in focus]} | 최근 각도: {recent_angles}")
+    if w:
+        facts = weather.facts_text(w, slot)
+        points = weather.check_points(w, slot)
+        recent_angles = _load_list(SNS_ANGLES_KEY)
+        focus, extra = pick_focus(points, recent_angles)
+        print(f"[sns] 오늘 날씨:\n{facts}")
+        print(f"[sns] 중심: {[p[0] for p in focus]} | 최근 각도: {recent_angles}")
+    else:
+        facts, focus, extra = "", [], []
 
     # 블로그 새 글이 발행된 날 — 점심 글에 한 줄 소개 (하루 1회)
     todays_post = db.published_post_today() if slot == "lunch" else None
@@ -161,13 +164,13 @@ def main(argv: list[str]) -> int:
                          or "한파" in p[1] for p in focus)
     # 날씨가 궂은 날은 아침엔 날씨 글만, 점심엔 화제 글 비율을 낮춘다
     ratio = ISSUE_RATIO[slot] * (0 if slot == "morning" else 0.5) if urgent_weather else ISSUE_RATIO[slot]
-    want_issue = "--issue" in argv or ("--weather" not in argv and random.random() < ratio)
+    want_issue = w is None or "--issue" in argv or ("--weather" not in argv and random.random() < ratio)
     if want_issue:
         used_keys = set(_load_list(SNS_ISSUES_KEY))
         issues = trends.collect(used_keys)[:8]
         print(f"[sns] 화제 후보 {len(issues)}개: {[i.text[:30] for i in issues]}")
         if issues:
-            first_win = next(iter(w.windows.values()), None)
+            first_win = next(iter(w.windows.values()), None) if w else None
             if urgent_weather:
                 wline = focus[0][1]
             elif first_win:
@@ -186,6 +189,10 @@ def main(argv: list[str]) -> int:
                 print(f"[sns] 화제 글: {used_issue.text}")
             else:
                 print("[sns] 고를 만한 화제 없음 — 날씨 글로")
+
+    if body is None and w is None:
+        print("[sns] ❌ 날씨도 화제도 없어 이번 회차 건너뜀")
+        return 1
 
     posted = 0
     for platform in platforms:
