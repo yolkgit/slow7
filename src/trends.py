@@ -104,6 +104,11 @@ def news_rss(max_items: int = 15) -> list[Issue]:
     return out
 
 
+def age_text(ts: float) -> str:
+    h = max(0, int((time.time() - ts) // 3600))
+    return "방금" if h == 0 else (f"{h}시간 전" if h < 24 else f"{h // 24}일 전")
+
+
 def collect(used_keys: set[str]) -> list[Issue]:
     """아직 안 쓴 화제 목록 (최신순)."""
     items = threads_search() + news_rss()

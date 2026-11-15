@@ -1,20 +1,20 @@
-"""SNS 게시 — 아침·점심 하루 두 번. 스레드 사람들처럼 반말로,
-그날 날씨 얘기와 요즘 러닝 쪽 화제(대회·이벤트·이슈) 얘기를 섞어서.
+"""SNS 게시 — 아침·점심 하루 두 번. 스레드 사람들처럼 반말로, 세 종류를 섞는다.
+    정보: 예전처럼 슬로우조깅 토픽 하나를 짧게 (topics.sns_topics 순환)
+    날씨: 그날 날씨·미세먼지 맞춤 한마디
+    화제: 요즘 러닝 뉴스·대회·이벤트에 한마디
 
-    python -m scripts.sns_post               # 지금 시각으로 슬롯 판단 (아침/점심 외엔 건너뜀)
-    python -m scripts.sns_post morning       # 슬롯 지정 (시각 검사 생략)
-    python -m scripts.sns_post lunch --force # 오늘 이미 올렸어도 다시
-    python -m scripts.sns_post lunch --issue # 화제 글로 (없으면 날씨 글)
-    python -m scripts.sns_post morning --weather  # 날씨 글로
+    python -m scripts.sns_post                 # 지금 시각으로 슬롯 판단 (아침/점심 외엔 건너뜀)
+    python -m scripts.sns_post morning         # 슬롯 지정 (시각 검사 생략)
+    python -m scripts.sns_post lunch --force   # 오늘 이미 올렸어도 다시
+    python -m scripts.sns_post lunch --issue   # 종류 지정 (--info / --issue / --weather)
 
 흐름:
     1) 지금 시각(KST)으로 슬롯 결정 — 아침 5~10시, 점심 11~14시. 그 밖이면 아무것도 안 함.
        같은 슬롯은 하루 한 번만 (cron 이 여러 번 돌아도 중복 게시 안 됨).
-    2) Open-Meteo 에서 오늘 날씨·미세먼지를 받아 사실 묶음과 "짚을 포인트"를 만든다.
-    3) 최근 글에서 쓴 각도(옷차림/미세먼지/비…)는 피해서 이번 글의 중심을 고른다.
-    4) 요즘 러닝 화제(스레드 검색·뉴스)를 모아, 점심엔 주로·아침엔 가끔 화제 글로.
-       화제가 없거나 날씨가 궂은 날(비·미세먼지 나쁨·한파)은 날씨 글.
-    5) 가벼운 모델로 짧은 글 생성 → 플랫폼에 게시.
+    2) 날씨를 받는다 (Open-Meteo → 안 되면 wttr.in).
+    3) KIND_WEIGHTS 비율로 글 종류를 고른다. 아침은 정보·날씨 위주, 점심은 화제·정보 위주.
+       비·미세먼지 나쁨·한파 날은 날씨 글 우선. 고른 종류가 안 되면 다른 종류로.
+    4) 가벼운 모델로 짧은 글 생성 → 플랫폼에 게시.
        블로그 새 글이 발행된 날엔 점심 글 끝에 한 줄 소개 + 링크 (하루 1회).
 """
 from __future__ import annotations
@@ -28,7 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src import config, db, social, social_writer, trends, weather
+from src import config, db, social, social_writer, topics, trends, weather
 
 # 슬롯별 게시 시간대 (KST, 시 단위 끝 포함)
 SLOT_HOURS = {"morning": (5, 10), "lunch": (11, 14)}
@@ -48,9 +48,50 @@ SNS_ANGLES_KEEP = 4
 SNS_ISSUES_KEY = "sns_used_issues"
 SNS_ISSUES_KEEP = 60
 
-# 화제 글 비율 (화제가 있을 때). 날씨가 궂은 날은 날씨 글이 우선.
-ISSUE_RATIO = {"morning": 0.25, "lunch": 0.7}
+# 글 종류별 비율. 정보 = 예전처럼 슬로우조깅 토픽 하나를 푸는 글,
+# 날씨 = 그날 날씨 맞춤, 화제 = 요즘 러닝 뉴스·이벤트에 한마디.
+KIND_WEIGHTS = {
+    "morning": {"info": 0.45, "weather": 0.45, "issue": 0.10},
+    "lunch": {"issue": 0.40, "info": 0.40, "weather": 0.20},
+}
 URGENT_ANGLES = ("비·눈", "더위")
+
+# 정보 글 토픽 순환. 예전 기록(sns_recent_topics, 쉼표 구분)도 함께 피한다
+SNS_TOPICS_KEY = "sns_recent_topics_v2"
+SNS_TOPICS_KEEP = 60
+
+
+def choose_kinds(slot: str, argv: list[str], has_weather: bool, urgent_weather: bool) -> list[str]:
+    """이번 회차에 시도할 글 종류 순서. 첫 번째가 안 되면 다음 것으로."""
+    for flag in ("info", "issue", "weather"):
+        if f"--{flag}" in argv:
+            first = flag
+            break
+    else:
+        weights = dict(KIND_WEIGHTS[slot])
+        if not has_weather:
+            weights["weather"] = 0
+        elif urgent_weather:
+            # 비·미세먼지 나쁨·한파 날: 아침은 날씨 글, 점심은 날씨 글 비중 크게
+            if slot == "morning":
+                weights = {"weather": 1, "info": 0, "issue": 0}
+            else:
+                weights["weather"] = 0.5
+        kinds = [k for k, v in weights.items() if v > 0]
+        first = random.choices(kinds, weights=[weights[k] for k in kinds])[0]
+    fallback = [k for k in ("info", "issue", "weather") if k != first]
+    return [first] + fallback
+
+
+def _pick_topic():
+    """최근에 안 쓴 슬로우조깅 토픽 하나. 직전 3개와 같은 주제군은 피한다."""
+    all_t = topics.sns_topics()
+    old = [k for k in (db.kv_get("sns_recent_topics", "") or "").split(",") if k]
+    recent = old + _load_list(SNS_TOPICS_KEY)
+    candidates = [t for t in all_t if t.key not in set(recent)] or all_t
+    recent_clusters = {topics.topic_cluster(k) for k in recent[-3:]}
+    fresh = [t for t in candidates if topics.topic_cluster(t.key) not in recent_clusters]
+    return random.choice(fresh or candidates)
 
 
 def _now() -> dt.datetime:
@@ -156,54 +197,66 @@ def main(argv: list[str]) -> int:
     linked_today = db.kv_get("threads_link_date") == today
 
     recent_texts = _load_list(SNS_TEXTS_KEY)
-    body = None
-    used_issue = None
-
-    # 화제 글로 갈지 결정
     urgent_weather = any(p[0] in URGENT_ANGLES or (p[0] == "미세먼지" and "좋음" not in p[1])
                          or "한파" in p[1] for p in focus)
-    # 날씨가 궂은 날은 아침엔 날씨 글만, 점심엔 화제 글 비율을 낮춘다
-    ratio = ISSUE_RATIO[slot] * (0 if slot == "morning" else 0.5) if urgent_weather else ISSUE_RATIO[slot]
-    want_issue = w is None or "--issue" in argv or ("--weather" not in argv and random.random() < ratio)
-    if want_issue:
-        used_keys = set(_load_list(SNS_ISSUES_KEY))
-        issues = trends.collect(used_keys)[:8]
-        print(f"[sns] 화제 후보 {len(issues)}개: {[i.text[:30] for i in issues]}")
-        if issues:
-            first_win = next(iter(w.windows.values()), None) if w else None
-            if urgent_weather:
-                wline = focus[0][1]
-            elif first_win:
-                wline = f"{first_win.name} {first_win.sky}, 체감 {first_win.feels_min}~{first_win.feels_max}℃"
-            else:
-                wline = ""
-            try:
+    order = choose_kinds(slot, argv, has_weather=w is not None, urgent_weather=urgent_weather)
+    print(f"[sns] 글 종류 순서: {order}")
+
+    body = None
+    used_issue = None
+    used_topic = None
+    for kind in order:
+        try:
+            if kind == "info":
+                topic = _pick_topic()
+                body = social_writer.write_info_post(topic.title, topic.angle, slot, avoid=recent_texts)
+                used_topic = topic
+                print(f"[sns] 정보 글: {topic.key} ({topic.title})")
+            elif kind == "issue":
+                issues = trends.collect(set(_load_list(SNS_ISSUES_KEY)))[:8]
+                print(f"[sns] 화제 후보 {len(issues)}개: {[i.text[:30] for i in issues]}")
+                if not issues:
+                    continue
+                first_win = next(iter(w.windows.values()), None) if w else None
+                if urgent_weather:
+                    wline = focus[0][1]
+                elif first_win:
+                    wline = f"{first_win.name} {first_win.sky}, 체감 {first_win.feels_min}~{first_win.feels_max}℃"
+                else:
+                    wline = ""
                 n, text = social_writer.write_issue_post(
-                    slot, [i.text for i in issues], wline, avoid=recent_texts,
+                    slot, [f"{i.text} ({trends.age_text(i.ts)})" for i in issues],
+                    wline, avoid=recent_texts,
                 )
-            except Exception as e:
-                print(f"[sns] 화제 글 생성 실패 — 날씨 글로: {e}")
-                n, text = None, ""
-            if n:
+                if not n:
+                    print("[sns] 고를 만한 화제 없음")
+                    continue
                 body, used_issue = text, issues[n - 1]
                 print(f"[sns] 화제 글: {used_issue.text}")
-            else:
-                print("[sns] 고를 만한 화제 없음 — 날씨 글로")
+            elif kind == "weather":
+                if not w:
+                    continue
+                body = social_writer.write_weather_post(
+                    slot, facts,
+                    [p[1] for p in focus] or ["특별한 날씨 이슈 없음 — 오늘 날씨에서 생활에 쓸모 있는 것 하나"],
+                    [p[1] for p in extra], avoid=recent_texts,
+                )
+        except Exception as e:
+            print(f"[sns] {kind} 글 생성 실패 — 다음 종류로: {e}")
+            body = None
+            continue
+        if body:
+            kind_used = kind
+            break
 
-    if body is None and w is None:
-        print("[sns] ❌ 날씨도 화제도 없어 이번 회차 건너뜀")
+    if not body:
+        print("[sns] ❌ 쓸 글이 없어 이번 회차 건너뜀")
         return 1
+    print(f"[sns] 최종 글 종류: {kind_used}")
 
     posted = 0
     for platform in platforms:
         try:
-            if body is None:
-                body = social_writer.write_weather_post(
-                    slot, facts,
-                    [p[1] for p in focus] or ["특별한 날씨 이슈 없음 — 오늘 날씨에서 생활에 쓸모 있는 것 하나"],
-                    [p[1] for p in extra],
-                    platform=platform, avoid=recent_texts,
-                )
             text = body
             link_used = False
             if platform == "threads":
@@ -231,6 +284,8 @@ def main(argv: list[str]) -> int:
         _push_list(SNS_TEXTS_KEY, body, SNS_TEXTS_KEEP)
         if used_issue:
             _push_list(SNS_ISSUES_KEY, used_issue.key, SNS_ISSUES_KEEP)
+        elif used_topic:
+            _push_list(SNS_TOPICS_KEY, used_topic.key, SNS_TOPICS_KEEP)
         else:
             for p in focus:
                 _push_list(SNS_ANGLES_KEY, p[0], SNS_ANGLES_KEEP)

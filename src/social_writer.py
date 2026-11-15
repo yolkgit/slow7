@@ -196,6 +196,8 @@ def write_issue_post(
         "- 대회·이벤트면 언제 뭐가 있는지, 나가는 사람한테 도움 될 한 줄.\n"
         "- 화제·논쟁이면 내 생각이나 슬로우조깅 하는 입장에서 한마디.\n"
         "- 제목에 없는 사실(날짜·기록·참가자 수 등)은 지어내지 마.\n"
+        "- 괄호 안은 기사가 나온 때. '출발', '열려', '성료', '개최했다'처럼 이미 지난 일이면\n"
+        "  지난 일로 써 (뛴 사람들 수고했다, 후기 궁금하다 등). 앞으로 있을 일만 '준비' 얘기를 해.\n"
         "- 남의 글을 그대로 옮기지 마.\n"
         "- 러닝과 관계없거나 사건·사고·정치 얘기면 고르지 마.\n\n"
         "출력 형식:\n첫 줄에 '번호: N' (고를 게 없으면 '번호: 0')\n빈 줄\n본문"
@@ -223,6 +225,36 @@ def write_issue_post(
     if len(body) > limit:
         body = body[:limit].rsplit("\n", 1)[0]
     return n, body
+
+
+def write_info_post(
+    title: str, angle: str, slot: str,
+    platform: str = "threads", avoid: list[str] | None = None,
+) -> str:
+    """슬로우조깅 토픽 하나를 스레드 말투로 짧게 푸는 정보 글."""
+    limit = min(LIMITS.get(platform, 300), 350)
+    user_msg = (
+        f"[올리는 때]\n{'아침' if slot == 'morning' else '점심'}\n\n"
+        f"[주제]\n{title}\n\n[핵심 내용]\n{angle}\n\n"
+        "이 주제로 러닝하는 사람이 알면 좋을 걸 스레드에 한마디 써줘.\n"
+        "- 핵심 하나만, 바로 써먹을 수 있게.\n"
+        "- 정보 블로그처럼 설명하지 말고, 아는 사람이 툭 알려주는 느낌.\n"
+        f"{limit}자 이내로 본문만."
+    )
+    if avoid:
+        shown = "\n---\n".join(t[:160] for t in avoid[-SNS_AVOID_SHOWN:])
+        user_msg += f"\n\n[최근에 올린 글 — 첫 줄·표현 겹치지 않게]\n{shown}"
+    client = Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    msg = client.messages.create(
+        model=config.ANTHROPIC_MODEL_LIGHT,
+        max_tokens=400,
+        system=THREADS_VOICE,
+        messages=[{"role": "user", "content": user_msg}],
+    )
+    body = _clean("".join(b.text for b in msg.content if hasattr(b, "text")))
+    if len(body) > limit:
+        body = body[:limit].rsplit("\n", 1)[0]
+    return body
 
 
 def write_promo(
