@@ -271,6 +271,8 @@ def write_promo(
         messages=[{"role": "user", "content": user_msg}],
     )
     body = _clean("".join(b.text for b in msg.content if hasattr(b, "text")))
+    # SNS 는 마크다운을 안 그려서 **굵게** 가 별표 그대로 보인다
+    body = re.sub(r"\*\*(.+?)\*\*", r"\1", body).replace("**", "")
     if len(body) > limit:
         body = body[:limit].rsplit("\n", 1)[0]
 

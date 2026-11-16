@@ -1,14 +1,17 @@
-"""SNS 게시 — 아침·점심 하루 두 번. 스레드 사람들처럼 반말로,
-그날 날씨 얘기와 요즘 러닝 쪽 화제(대회·이벤트·이슈) 얘기를 섞어서.
+"""SNS 게시 — 하루 세 번.
+  아침·점심: 스레드 사람들처럼 반말로, 그날 날씨 얘기와 요즘 러닝 쪽 화제(대회·이벤트·이슈) 얘기.
+  저녁: 예전부터 하던 슬로우조깅 정보 글 (토픽 순환, 페이스북엔 관련 블로그 글 링크).
 
-    python -m scripts.sns_post               # 지금 시각으로 슬롯 판단 (아침/점심 외엔 건너뜀)
+    python -m scripts.sns_post               # 지금 시각으로 슬롯 판단 (아침/점심/저녁 외엔 건너뜀)
     python -m scripts.sns_post morning       # 슬롯 지정 (시각 검사 생략)
     python -m scripts.sns_post lunch --force # 오늘 이미 올렸어도 다시
     python -m scripts.sns_post lunch --issue # 화제 글로 (없으면 날씨 글)
     python -m scripts.sns_post morning --weather  # 날씨 글로
+    python -m scripts.sns_post evening       # 정보 글 (토픽 자동 선택)
+    python -m scripts.sns_post evening c_vs_walking  # 정보 글, 토픽 지정
 
-흐름:
-    1) 지금 시각(KST)으로 슬롯 결정 — 아침 5~10시, 점심 11~14시. 그 밖이면 아무것도 안 함.
+흐름 (저녁 정보 글은 post_info 참고):
+    1) 지금 시각(KST)으로 슬롯 결정 — 아침 5~10시, 점심 11~14시, 저녁 18~22시. 그 밖이면 아무것도 안 함.
        같은 슬롯은 하루 한 번만 (cron 이 여러 번 돌아도 중복 게시 안 됨).
     2) Open-Meteo 에서 오늘 날씨·미세먼지를 받아 사실 묶음과 "짚을 포인트"를 만든다.
     3) 최근 글에서 쓴 각도(옷차림/미세먼지/비…)는 피해서 이번 글의 중심을 고른다.
@@ -28,10 +31,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src import config, db, social, social_writer, trends, weather
+from src import config, db, social, social_writer, topics, trends, weather
 
-# 슬롯별 게시 시간대 (KST, 시 단위 끝 포함)
-SLOT_HOURS = {"morning": (5, 10), "lunch": (11, 14)}
+# 슬롯별 게시 시간대 (KST, 시 단위 끝 포함). 저녁은 정보 글.
+SLOT_HOURS = {"morning": (5, 10), "lunch": (11, 14), "evening": (18, 22)}
+
+# 정보 글 토픽 순환 (블로그 이력과 분리). 풀이 78개 안팎이라 60이면 후보가 18개쯤 남는다.
+SNS_RECENT_KEY = "sns_recent_topics"
+SNS_RECENT_WINDOW = 60
 
 # 오늘 이미 올린 슬롯 기록  값: "YYYY-MM-DD:morning,lunch"
 SLOT_DONE_KEY = "sns_slot_done"
@@ -108,6 +115,102 @@ def pick_focus(points: list[tuple[str, str]], recent_angles: list[str]) -> tuple
     return focus, extra
 
 
+def _strip_html(html: str, limit: int = 200) -> str:
+    import re
+    text = re.sub(r"<[^>]+>", " ", html or "")
+    return re.sub(r"\s+", " ", text).strip()[:limit]
+
+
+def _recent_topics() -> list[str]:
+    raw = db.kv_get(SNS_RECENT_KEY, "") or ""
+    return [k for k in raw.split(",") if k][-SNS_RECENT_WINDOW:]
+
+
+def _pick_topic(topic_key: str | None):
+    if topic_key:
+        # 수동 지정은 연재 편도 허용
+        return next((t for t in topics.all_topics() if t.key == topic_key), None)
+    all_t = topics.sns_topics()
+    recent = _recent_topics()
+    candidates = [t for t in all_t if t.key not in set(recent)] or all_t
+    # 직전 3개와 같은 주제군(지방연소, 호흡 등)은 피한다 — 키가 달라도 내용이 겹친다
+    recent_clusters = {topics.topic_cluster(k) for k in recent[-3:]}
+    fresh = [t for t in candidates if topics.topic_cluster(t.key) not in recent_clusters]
+    return random.choice(fresh or candidates)
+
+
+def post_info(platforms: list[str], today: str, topic_key: str | None = None) -> int:
+    """예전부터 하던 슬로우조깅 정보 글.
+
+    1) 최근 안 쓴 토픽 하나 선택 (블로그와 별도로 SNS용 순환)
+    2) 그 토픽 주제군의 발행 블로그 글을 찾아 페이스북 등엔 링크 첨부
+    3) 스레드는 링크 없는 순수 정보 글 — 블로그 새 글이 나온 날 아직 소개를 안 했으면 그 소개(하루 1회)
+    반환: 게시한 플랫폼 수
+    """
+    topic = _pick_topic(topic_key)
+    if not topic:
+        print(f"[sns] 토픽 못 찾음: {topic_key}")
+        return 0
+    print(f"[sns] 정보 글 토픽: {topic.key} ({topic.title}) | 플랫폼: {platforms}")
+
+    cluster = topics.topic_cluster(topic.key)
+    related = db.find_related_published(cluster, topics.keys_in_cluster(cluster))
+    if related:
+        blog_url = related["wp_link"]
+        print(f"[sns] 관련 글 링크: {related['title']} → {blog_url}")
+    else:
+        blog_url = config.WP_SITE_URL or ""
+        print(f"[sns] 관련 발행글 없음 → 메인 링크 사용: {blog_url}")
+
+    todays_post = db.published_post_today()
+    linked_today = db.kv_get("threads_link_date") == today
+    recent_texts = _load_list(SNS_TEXTS_KEY)
+
+    posted = 0
+    for platform in platforms:
+        link_used = False
+        try:
+            if platform == "threads":
+                if todays_post and not linked_today:
+                    summary = _strip_html(todays_post.get("content_html", ""))
+                    text = social_writer.write_promo(
+                        todays_post["title"], summary, platform, todays_post["wp_link"],
+                        avoid=recent_texts,
+                    )
+                    link_used = True
+                    print("[sns] threads: 오늘 새 글 소개 (링크 1회)")
+                else:
+                    text = social_writer.write_promo(
+                        topic.title, topic.angle, platform, None, avoid=recent_texts,
+                    )
+                    print("[sns] threads: 링크 없는 정보 글")
+            else:
+                text = social_writer.write_promo(
+                    topic.title, topic.angle, platform, blog_url or None, avoid=recent_texts,
+                )
+
+            print(f"\n[sns] {platform} 글:\n{text}\n")
+            sns_id = social.post_to(platform, text)
+            posted += 1
+            print(f"[sns] ✅ {platform} 게시 (id={sns_id})")
+            if not config.DRY_RUN:
+                if platform == "threads":
+                    _push_list(SNS_TEXTS_KEY, text, SNS_TEXTS_KEEP)
+                if link_used:
+                    db.kv_set("threads_link_date", today)
+        except Exception as e:
+            print(f"[sns] ❌ {platform} 실패: {e}")
+        if not config.DRY_RUN and platform != platforms[-1]:
+            d = random.uniform(20, 60)
+            print(f"[sns] ⏱ {d:.0f}초 대기")
+            time.sleep(d)
+
+    if posted and not config.DRY_RUN:
+        recent = _recent_topics() + [topic.key]
+        db.kv_set(SNS_RECENT_KEY, ",".join(recent[-SNS_RECENT_WINDOW:]))
+    return posted
+
+
 def main(argv: list[str]) -> int:
     force = "--force" in argv
     args = [a for a in argv if not a.startswith("--")]
@@ -119,7 +222,7 @@ def main(argv: list[str]) -> int:
     now = _now()
     slot = args[0] if args else slot_for(now)
     if slot not in SLOT_HOURS:
-        print(f"[sns] {now:%H:%M} — 아침·점심 시간이 아니라 건너뜀")
+        print(f"[sns] {now:%H:%M} — 아침·점심·저녁 시간이 아니라 건너뜀")
         return 0
 
     platforms = social.enabled_platforms()
@@ -132,6 +235,13 @@ def main(argv: list[str]) -> int:
     if slot in _done_slots(today) and not force:
         print(f"[sns] 오늘 {slot} 글은 이미 올림 — 건너뜀")
         return 0
+
+    if slot == "evening":
+        posted = post_info(platforms, today, args[1] if len(args) > 1 else None)
+        if posted and not config.DRY_RUN:
+            _mark_done(today, slot)
+        print(f"\n[sns] 총 {posted}개 플랫폼 게시 완료")
+        return 0 if posted else 1
 
     try:
         w = weather.fetch(now.date())
